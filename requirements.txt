@@ -1,0 +1,6 @@
+aiogram==3.22.0
+faster-whisper==1.2.0
+requests>=2.32,<3
+ctranslate2>=4.6
+onnxruntime
+av

@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+models/
+__pycache__/
+*.py[cod]
+*.log
+*.codex-backup-*
+.venv/
+.idea/
+.vscode/

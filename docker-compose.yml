@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+
+  whisperbot:
+
+    build: .
+
+    restart: always
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./models:/root/.cache/huggingface
