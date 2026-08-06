@@ -24,9 +24,8 @@ Disable
 
 ## Запуск
 
-1. Скопируйте `.env.example` в `.env`.
-2. Укажите Telegram-токен в `BOT_TOKEN`.
-3. Запустите контейнер:
+1. Укажите Telegram-токен в .env
+2. Запустите контейнер:
 
 ```bash
 docker compose up -d --build
