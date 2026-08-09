@@ -8,8 +8,25 @@ services:
 
     restart: always
 
+    # Keep Whisper from exhausting all host memory.
+    mem_limit: 2560m
+    memswap_limit: 3072m
+
     env_file:
       - .env
+
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 2m
+      timeout: 15s
+      retries: 3
+      start_period: 3m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
     volumes:
       - ./models:/root/.cache/huggingface

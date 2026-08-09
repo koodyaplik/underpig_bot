@@ -6,6 +6,7 @@ import tempfile
 from aiogram import Bot
 from aiogram import Dispatcher
 from aiogram import F
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from aiogram.types import Message
 
@@ -14,6 +15,8 @@ from faster_whisper import WhisperModel
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.environ["BOT_TOKEN"]
+
+TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY")
 
 MAX_DURATION = int(os.getenv("MAX_DURATION", "900"))
 
@@ -29,16 +32,20 @@ model = WhisperModel(
 
 print("Model loaded.")
 
-bot = Bot(TOKEN)
+session = AiohttpSession(proxy=TELEGRAM_PROXY) if TELEGRAM_PROXY else AiohttpSession()
+
+bot = Bot(TOKEN, session=session)
 
 dp = Dispatcher()
+
+transcription_lock = asyncio.Lock()
 
 
 def recognize(path):
 
     segments, info = model.transcribe(
         path,
-        beam_size=5,
+        beam_size=1,
         vad_filter=True
     )
 
@@ -70,10 +77,12 @@ async def voice(message: Message):
             destination=f.name
         )
 
-        text = await asyncio.to_thread(
-            recognize,
-            f.name
-        )
+        async with transcription_lock:
+
+            text = await asyncio.to_thread(
+                recognize,
+                f.name
+            )
 
     await wait.delete()
 
