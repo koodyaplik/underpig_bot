@@ -24,8 +24,24 @@ Disable
 
 ## Запуск
 
-1. Укажите Telegram-токен в .env
-2. Запустите контейнер:
+1. Создайте локальный файл настроек:
+
+```bash
+cp .env.example .env
+```
+
+2. Укажите Telegram-токен в `.env`.
+
+Если Telegram должен работать через SOCKS5-прокси, заполните также:
+
+```dotenv
+TELEGRAM_PROXY=socks5://user:password@host:port
+```
+
+Логин и пароль с зарезервированными URL-символами необходимо URL-кодировать.
+DNS-запросы Telegram выполняются через прокси.
+
+3. Запустите контейнер:
 
 ```bash
 docker compose up -d --build
