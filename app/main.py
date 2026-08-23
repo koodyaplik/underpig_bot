@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.types import BotCommand
 
-from app.aviationstack.client import AviationstackClient
+from app.aeroapi.client import AeroApiClient
 from app.bot.handlers import build_router
 from app.bot.voice_handlers import build_voice_router
 from app.config import Settings
@@ -31,7 +31,7 @@ async def run() -> None:
     await db.migrate()
 
     quota = QuotaManager(db, settings)
-    client = AviationstackClient(settings=settings, db=db, quota=quota)
+    client = AeroApiClient(settings=settings, db=db, quota=quota)
     await client.initialize()
     telegram_session = (
         AiohttpSession(proxy=settings.telegram_proxy)

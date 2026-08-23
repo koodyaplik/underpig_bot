@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "underpig-flight-bot"
 version = "0.1.0"
-description = "Telegram flight tracking bot backed by Aviationstack"
+description = "Telegram flight tracking bot backed by FlightAware AeroAPI"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from conftest import make_candidate
 
-from app.aviationstack.normalize import candidate_to_state
+from app.aeroapi.normalize import candidate_to_state
 from app.storage.db import Database
 
 
@@ -124,7 +124,7 @@ async def test_quota_resume_restores_future_state(tmp_path: Path) -> None:
     await db.connect()
     try:
         await db.migrate()
-        candidate = make_candidate(source_kind="future")
+        candidate = make_candidate(source_kind="schedule")
         flight_id, _ = await db.create_or_get_flight(candidate)
         await db.add_subscription(flight_id, 10, 10)
         rows = await db.claim_due_flights(

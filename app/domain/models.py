@@ -57,6 +57,7 @@ class FlightCandidate:
     codeshare: dict[str, Any] | None
     source_updated_at: str | None
     raw: dict[str, Any]
+    provider_flight_id: str | None = None
     source_kind: str = "realtime"
 
     def to_dict(self) -> dict[str, Any]:
@@ -66,6 +67,8 @@ class FlightCandidate:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> FlightCandidate:
         copied = dict(value)
+        copied.setdefault("provider_flight_id", None)
+        copied.setdefault("source_kind", "realtime")
         for field_name in (
             "scheduled_departure",
             "estimated_departure",

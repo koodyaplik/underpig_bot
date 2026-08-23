@@ -40,15 +40,19 @@ class Settings(BaseSettings):
     whisper_cache_dir: str = "/models"
     max_duration: int = 900
 
-    aviationstack_api_key: SecretStr
-    aviationstack_base_url: str = "https://api.aviationstack.com/v1"
-    aviationstack_time_mode: Literal["wall_clock", "iso8601"] = "wall_clock"
-    aviationstack_monthly_request_limit: int = 10_000
-    aviationstack_request_reserve: int = 500
-    aviationstack_hard_request_cap: int = 10_000
-    aviationstack_allow_overage: bool = False
-    aviationstack_billing_cycle_day: int = 1
-    aviationstack_max_concurrency: int = 5
+    aeroapi_api_key: SecretStr = Field(
+        validation_alias=AliasChoices("FLIGHTAWARE_AEROAPI_KEY", "AEROAPI_KEY")
+    )
+    aeroapi_base_url: str = Field(
+        default="https://aeroapi.flightaware.com/aeroapi",
+        validation_alias=AliasChoices("FLIGHTAWARE_AEROAPI_BASE_URL", "AEROAPI_BASE_URL"),
+    )
+    aeroapi_monthly_request_limit: int = 10_000
+    aeroapi_request_reserve: int = 500
+    aeroapi_hard_request_cap: int = 10_000
+    aeroapi_allow_overage: bool = False
+    aeroapi_billing_cycle_day: int = 1
+    aeroapi_max_concurrency: int = 5
 
     database_path: str = "/data/flights.db"
 
@@ -83,7 +87,7 @@ class Settings(BaseSettings):
     def parse_ids(cls, value: object) -> list[int]:
         return _parse_id_list(value)
 
-    @field_validator("aviationstack_base_url")
+    @field_validator("aeroapi_base_url")
     @classmethod
     def normalize_base_url(cls, value: str) -> str:
         return value.rstrip("/")
@@ -91,9 +95,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_limits(self) -> Settings:
         positive_fields = {
-            "aviationstack_monthly_request_limit": self.aviationstack_monthly_request_limit,
-            "aviationstack_hard_request_cap": self.aviationstack_hard_request_cap,
-            "aviationstack_max_concurrency": self.aviationstack_max_concurrency,
+            "aeroapi_monthly_request_limit": self.aeroapi_monthly_request_limit,
+            "aeroapi_hard_request_cap": self.aeroapi_hard_request_cap,
+            "aeroapi_max_concurrency": self.aeroapi_max_concurrency,
             "scheduler_tick_seconds": self.scheduler_tick_seconds,
             "scheduler_batch_size": self.scheduler_batch_size,
             "flight_lease_seconds": self.flight_lease_seconds,
@@ -104,13 +108,13 @@ class Settings(BaseSettings):
         invalid = [name for name, value in positive_fields.items() if value <= 0]
         if invalid:
             raise ValueError(f"Values must be positive: {', '.join(invalid)}")
-        if not 1 <= self.aviationstack_billing_cycle_day <= 28:
-            raise ValueError("AVIATIONSTACK_BILLING_CYCLE_DAY must be between 1 and 28")
-        if not 0 <= self.aviationstack_request_reserve < self.aviationstack_monthly_request_limit:
-            raise ValueError("AVIATIONSTACK_REQUEST_RESERVE must be smaller than monthly limit")
+        if not 1 <= self.aeroapi_billing_cycle_day <= 28:
+            raise ValueError("AEROAPI_BILLING_CYCLE_DAY must be between 1 and 28")
+        if not 0 <= self.aeroapi_request_reserve < self.aeroapi_monthly_request_limit:
+            raise ValueError("AEROAPI_REQUEST_RESERVE must be smaller than monthly limit")
         if (
-            not self.aviationstack_allow_overage
-            and self.aviationstack_hard_request_cap > self.aviationstack_monthly_request_limit
+            not self.aeroapi_allow_overage
+            and self.aeroapi_hard_request_cap > self.aeroapi_monthly_request_limit
         ):
             raise ValueError("Hard cap cannot exceed monthly limit when overage is disabled")
         if self.flight_lease_seconds <= (
@@ -128,5 +132,5 @@ class Settings(BaseSettings):
         return self.telegram_bot_token.get_secret_value()
 
     @cached_property
-    def aviationstack_key(self) -> str:
-        return self.aviationstack_api_key.get_secret_value()
+    def aeroapi_key(self) -> str:
+        return self.aeroapi_api_key.get_secret_value()

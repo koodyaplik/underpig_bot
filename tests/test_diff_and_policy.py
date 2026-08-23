@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from conftest import make_candidate
 
-from app.aviationstack.normalize import candidate_to_state
+from app.aeroapi.normalize import candidate_to_state
 from app.tracking.diff import diff_flight_state, preserve_transient_nulls
 from app.tracking.policy import calculate_error_backoff, calculate_next_check
 

@@ -10,7 +10,7 @@ from typing import Any
 
 import aiosqlite
 
-from app.aviationstack.normalize import candidate_to_state
+from app.aeroapi.normalize import candidate_to_state
 from app.domain.models import FlightCandidate
 
 POLLABLE_STATES = (
@@ -162,8 +162,11 @@ class Database:
         now = _now()
         async with self._write_lock:
             await self.conn.execute(
-                "DELETE FROM date_selection_sessions WHERE telegram_user_id=? AND used_at_epoch IS NULL",
-                (telegram_user_id,),
+                """
+                DELETE FROM date_selection_sessions
+                WHERE telegram_user_id=? AND telegram_chat_id=? AND used_at_epoch IS NULL
+                """,
+                (telegram_user_id, telegram_chat_id),
             )
             await self.conn.execute(
                 """
@@ -370,7 +373,7 @@ class Database:
             "diverted": "diverted",
         }.get(
             candidate.api_status,
-            "future_scheduled" if candidate.source_kind == "future" else "scheduled",
+            "future_scheduled" if candidate.source_kind == "schedule" else "scheduled",
         )
         scheduled_local = (
             candidate.scheduled_departure.local_iso if candidate.scheduled_departure else None

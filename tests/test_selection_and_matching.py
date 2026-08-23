@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 from conftest import make_candidate
 
-from app.aviationstack.matching import match_tracked_instance
-from app.aviationstack.selection import select_flight_candidates
+from app.aeroapi.matching import match_tracked_instance
+from app.aeroapi.selection import select_flight_candidates
 
 
 def test_selection_does_not_depend_on_order() -> None:
@@ -15,13 +15,13 @@ def test_selection_does_not_depend_on_order() -> None:
     assert select_flight_candidates(
         [yesterday, today],
         requested_flight_iata="FV6106",
-        requested_date=None,
+        requested_date="2026-08-23",
         now=now,
     ) == [today]
     assert select_flight_candidates(
         [today, yesterday],
         requested_flight_iata="FV6106",
-        requested_date=None,
+        requested_date="2026-08-23",
         now=now,
     ) == [today]
 
@@ -42,6 +42,7 @@ def test_matching_never_switches_route() -> None:
     other = make_candidate(arrival_iata="SVO")
     matched = match_tracked_instance(
         [other, expected],
+        provider_flight_id=None,
         flight_iata="FV6106",
         flight_date="2026-08-23",
         departure_iata="GOJ",
@@ -57,6 +58,7 @@ def test_matching_uses_local_wall_clock_for_same_route() -> None:
 
     matched = match_tracked_instance(
         [later, closest],
+        provider_flight_id=None,
         flight_iata="FV6106",
         flight_date="2026-08-23",
         departure_iata="GOJ",
@@ -65,3 +67,22 @@ def test_matching_uses_local_wall_clock_for_same_route() -> None:
     )
 
     assert matched is closest
+
+
+def test_matching_prefers_flightaware_id_over_similar_route() -> None:
+    expected = make_candidate()
+    expected.provider_flight_id = "expected-fa-id"
+    replacement = make_candidate()
+    replacement.provider_flight_id = "replacement-fa-id"
+
+    matched = match_tracked_instance(
+        [replacement, expected],
+        provider_flight_id="expected-fa-id",
+        flight_iata="FV6106",
+        flight_date="2026-08-23",
+        departure_iata="GOJ",
+        arrival_iata="LED",
+        identity_scheduled_local=expected.scheduled_departure.local_iso,
+    )
+
+    assert matched is expected

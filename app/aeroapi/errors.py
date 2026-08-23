@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-class AviationstackError(RuntimeError):
+class AeroApiError(RuntimeError):
     def __init__(
         self,
         message: str,
@@ -18,6 +18,6 @@ class AviationstackError(RuntimeError):
         self.retry_after = retry_after
 
 
-class QuotaExceededError(AviationstackError):
-    def __init__(self, message: str = "Aviationstack request budget is exhausted") -> None:
+class QuotaExceededError(AeroApiError):
+    def __init__(self, message: str = "AeroAPI request budget is exhausted") -> None:
         super().__init__(message, code="local_quota_exceeded", transient=False)

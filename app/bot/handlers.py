@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from zoneinfo import ZoneInfo
 
@@ -12,7 +12,9 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards import (
+    calendar_keyboard,
     candidate_keyboard,
+    date_shortcuts,
     delete_confirmation_keyboard,
     subscription_keyboard,
     subscriptions_keyboard,
@@ -32,7 +34,10 @@ HELP_TEXT = """<b>Underpig Bot</b>
 Добавить рейс:
 <code>/flight FV6106</code>
 
-Бот всегда ищет рейс на сегодня. Статусы будут приходить в тот чат, где добавлен рейс.
+После команды бот предложит выбрать дату вылета. Статусы будут приходить в тот чат, где добавлен рейс.
+
+Дату можно указать сразу:
+<code>/flight FV6106 2026-08-24</code>
 
 Мои подписки: /flights
 Остановить подписку: /stop
@@ -98,12 +103,132 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
         except CommandValidationError as exc:
             await message.answer(escape(str(exc)), parse_mode="HTML")
             return
-        await run_search(
-            message,
-            user_id=message.from_user.id,
-            chat_id=message.chat.id,
+        today = datetime.now(ZoneInfo(settings.bot_default_timezone)).date()
+        maximum = today + timedelta(days=363)
+        if parsed.flight_date:
+            selected = date.fromisoformat(parsed.flight_date)
+            if not today <= selected <= maximum:
+                await message.answer("Можно выбрать дату от сегодня до 363 дней вперед.")
+                return
+            await run_search(
+                message,
+                user_id=message.from_user.id,
+                chat_id=message.chat.id,
+                flight_iata=parsed.flight_iata,
+                flight_date=parsed.flight_date,
+                departure_iata=None,
+            )
+            return
+        token = await db.create_date_session(
+            telegram_user_id=message.from_user.id,
+            telegram_chat_id=message.chat.id,
             flight_iata=parsed.flight_iata,
-            flight_date=datetime.now(ZoneInfo(settings.bot_default_timezone)).date().isoformat(),
+            departure_iata=None,
+            ttl_minutes=settings.pending_selection_ttl_minutes,
+        )
+        await message.answer(
+            f"Выберите дату вылета <b>{escape(parsed.flight_iata)}</b>.\n"
+            f"Дата определяется по часовому поясу аэропорта отправления.",
+            parse_mode="HTML",
+            reply_markup=date_shortcuts(token, today),
+        )
+
+    @router.callback_query(F.data.startswith("fd:"))
+    async def date_callback(callback: CallbackQuery) -> None:
+        if not callback.from_user or not callback.data or not callback.message:
+            return
+        parts = callback.data.split(":")
+        if len(parts) < 3:
+            await callback.answer("Некорректная кнопка", show_alert=True)
+            return
+        token, action = parts[1], parts[2]
+        session = await db.get_date_session(token, callback.from_user.id)
+        if not session or int(session["telegram_chat_id"]) != callback.message.chat.id:
+            await callback.answer("Выбор устарел. Повторите /flight.", show_alert=True)
+            return
+        today = datetime.now(ZoneInfo(settings.bot_default_timezone)).date()
+        maximum = today + timedelta(days=363)
+        if action == "noop":
+            await callback.answer()
+            return
+        if action == "cal":
+            await callback.message.edit_reply_markup(
+                reply_markup=calendar_keyboard(
+                    token,
+                    today.year,
+                    today.month,
+                    minimum=today,
+                    maximum=maximum,
+                )
+            )
+            await callback.answer()
+            return
+        if action == "quick":
+            await callback.message.edit_reply_markup(reply_markup=date_shortcuts(token, today))
+            await callback.answer()
+            return
+        if action == "m" and len(parts) == 4:
+            value = parts[3]
+            try:
+                if len(value) != 6 or not value.isdigit():
+                    raise ValueError
+                month_start = date(int(value[:4]), int(value[4:6]), 1)
+                next_month = date(
+                    month_start.year + (month_start.month == 12),
+                    1 if month_start.month == 12 else month_start.month + 1,
+                    1,
+                )
+                month_end = next_month - timedelta(days=1)
+                if month_end < today or month_start > maximum:
+                    raise ValueError
+            except ValueError:
+                await callback.answer("Эта дата недоступна", show_alert=True)
+                return
+            await callback.message.edit_reply_markup(
+                reply_markup=calendar_keyboard(
+                    token,
+                    month_start.year,
+                    month_start.month,
+                    minimum=today,
+                    maximum=maximum,
+                )
+            )
+            await callback.answer()
+            return
+        if action == "cancel":
+            await db.use_date_session(token)
+            await callback.message.edit_text("Выбор рейса отменен.")
+            await callback.answer()
+            return
+        selected_date: date
+        if action in {"t0", "t1", "t2"}:
+            selected_date = today + timedelta(days=int(action[1]))
+        elif action == "d" and len(parts) == 4:
+            value = parts[3]
+            try:
+                if len(value) != 8 or not value.isdigit():
+                    raise ValueError
+                selected_date = date(int(value[:4]), int(value[4:6]), int(value[6:8]))
+            except ValueError:
+                await callback.answer("Некорректная кнопка", show_alert=True)
+                return
+        else:
+            await callback.answer("Некорректная кнопка", show_alert=True)
+            return
+        if not today <= selected_date <= maximum:
+            await callback.answer("Эта дата недоступна", show_alert=True)
+            return
+        await db.use_date_session(token)
+        await callback.answer()
+        await callback.message.edit_text(
+            f"Дата выбрана: <b>{selected_date:%d.%m.%Y}</b>", parse_mode="HTML"
+        )
+        await run_search(
+            callback.message,
+            user_id=callback.from_user.id,
+            chat_id=int(session["telegram_chat_id"]),
+            flight_iata=str(session["flight_iata"]),
+            flight_date=selected_date.isoformat(),
             departure_iata=None,
         )
 

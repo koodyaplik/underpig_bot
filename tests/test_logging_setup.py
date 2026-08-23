@@ -5,14 +5,14 @@ import logging
 from app.logging_setup import JsonFormatter, configure_logging
 
 
-def test_json_logging_keeps_aviationstack_url_and_redacts_telegram_token() -> None:
+def test_json_logging_redacts_provider_and_telegram_tokens() -> None:
     record = logging.LogRecord(
         name="test",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
         msg=(
-            "GET https://example.test/flights?access_key=flight-secret&limit=1 "
+            "GET https://example.test/flights/UAL4 x-apikey: flight-secret "
             "BOT_TOKEN=123456:telegram-secret"
         ),
         args=(),
@@ -21,9 +21,9 @@ def test_json_logging_keeps_aviationstack_url_and_redacts_telegram_token() -> No
 
     result = JsonFormatter().format(record)
 
-    assert "access_key=flight-secret" in result
+    assert "flight-secret" not in result
     assert "telegram-secret" not in result
-    assert result.count("[REDACTED]") == 1
+    assert result.count("[REDACTED]") == 2
 
 
 def test_http_client_loggers_do_not_log_request_urls_at_info() -> None:

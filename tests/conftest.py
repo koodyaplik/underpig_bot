@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.aviationstack.time_parser import parse_aviationstack_time
+from app.aeroapi.time_parser import parse_aeroapi_time
 from app.config import Settings
 from app.domain.models import FlightCandidate
 
@@ -13,11 +13,11 @@ from app.domain.models import FlightCandidate
 def settings(tmp_path: Path) -> Settings:
     return Settings(
         telegram_bot_token="123456:TEST_TOKEN",
-        aviationstack_api_key="test-key",
+        aeroapi_api_key="test-key",
         database_path=str(tmp_path / "flights.db"),
-        aviationstack_monthly_request_limit=100,
-        aviationstack_request_reserve=10,
-        aviationstack_hard_request_cap=100,
+        aeroapi_monthly_request_limit=100,
+        aeroapi_request_reserve=10,
+        aeroapi_hard_request_cap=100,
         _env_file=None,
     )
 
@@ -48,10 +48,10 @@ def make_candidate(
         arrival_iata=arrival_iata,
         arrival_icao="ULLI",
         arrival_timezone=timezone,
-        scheduled_departure=parse_aviationstack_time(scheduled, timezone),
-        estimated_departure=parse_aviationstack_time(estimated, timezone),
+        scheduled_departure=parse_aeroapi_time(scheduled, timezone),
+        estimated_departure=parse_aeroapi_time(estimated, timezone),
         actual_departure=None,
-        scheduled_arrival=parse_aviationstack_time(f"{flight_date}T15:10:00+00:00", timezone),
+        scheduled_arrival=parse_aeroapi_time(f"{flight_date}T15:10:00+00:00", timezone),
         estimated_arrival=None,
         actual_arrival=None,
         departure_delay=None,
@@ -69,5 +69,6 @@ def make_candidate(
         codeshare=None,
         source_updated_at=None,
         raw={"flight_date": flight_date},
+        provider_flight_id="FV6106-20260823-test",
         source_kind=source_kind,
     )

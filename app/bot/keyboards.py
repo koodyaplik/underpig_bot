@@ -1,9 +1,114 @@
 from __future__ import annotations
 
+import calendar
+from datetime import date, timedelta
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.domain.models import FlightCandidate
 from app.notifications.formatter import candidate_label
+
+MONTHS_RU = (
+    "",
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+)
+
+
+def date_shortcuts(token: str, today: date) -> InlineKeyboardMarkup:
+    tomorrow = today + timedelta(days=1)
+    after = today + timedelta(days=2)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"Сегодня · {today:%d.%m}", callback_data=f"fd:{token}:t0"
+                ),
+                InlineKeyboardButton(
+                    text=f"Завтра · {tomorrow:%d.%m}", callback_data=f"fd:{token}:t1"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"Послезавтра · {after:%d.%m}", callback_data=f"fd:{token}:t2"
+                ),
+                InlineKeyboardButton(text="Другая дата", callback_data=f"fd:{token}:cal"),
+            ],
+            [InlineKeyboardButton(text="Отмена", callback_data=f"fd:{token}:cancel")],
+        ]
+    )
+
+
+def calendar_keyboard(
+    token: str,
+    year: int,
+    month: int,
+    *,
+    minimum: date,
+    maximum: date,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text=f"{MONTHS_RU[month]} {year}", callback_data=f"fd:{token}:noop")],
+        [
+            InlineKeyboardButton(text=day, callback_data=f"fd:{token}:noop")
+            for day in ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+        ],
+    ]
+    for week in calendar.Calendar(firstweekday=0).monthdayscalendar(year, month):
+        buttons: list[InlineKeyboardButton] = []
+        for day in week:
+            value = date(year, month, day) if day else None
+            enabled = value is not None and minimum <= value <= maximum
+            buttons.append(
+                InlineKeyboardButton(
+                    text=str(day) if day else " ",
+                    callback_data=(
+                        f"fd:{token}:d:{year:04d}{month:02d}{day:02d}"
+                        if enabled
+                        else f"fd:{token}:noop"
+                    ),
+                )
+            )
+        rows.append(buttons)
+
+    current = date(year, month, 1)
+    previous = current - timedelta(days=1)
+    next_month = date(year + (month == 12), 1 if month == 12 else month + 1, 1)
+    previous_enabled = previous >= minimum
+    next_enabled = next_month <= maximum
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="‹" if previous_enabled else "·",
+                callback_data=(
+                    f"fd:{token}:m:{previous.year:04d}{previous.month:02d}"
+                    if previous_enabled
+                    else f"fd:{token}:noop"
+                ),
+            ),
+            InlineKeyboardButton(text="Быстрый выбор", callback_data=f"fd:{token}:quick"),
+            InlineKeyboardButton(
+                text="›" if next_enabled else "·",
+                callback_data=(
+                    f"fd:{token}:m:{next_month.year:04d}{next_month.month:02d}"
+                    if next_enabled
+                    else f"fd:{token}:noop"
+                ),
+            ),
+        ]
+    )
+    rows.append([InlineKeyboardButton(text="Отмена", callback_data=f"fd:{token}:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def candidate_keyboard(items: list[tuple[str, FlightCandidate]]) -> InlineKeyboardMarkup:

@@ -8,21 +8,34 @@ from app.domain.models import FlightCandidate
 def match_tracked_instance(
     candidates: list[FlightCandidate],
     *,
+    provider_flight_id: str | None,
     flight_iata: str,
     flight_date: str,
     departure_iata: str,
     arrival_iata: str,
     identity_scheduled_local: str | None,
 ) -> FlightCandidate | None:
+    pool = candidates
+    if provider_flight_id:
+        by_provider_id = [
+            item for item in candidates if item.provider_flight_id == provider_flight_id
+        ]
+        if len(by_provider_id) == 1:
+            return by_provider_id[0]
+        if by_provider_id:
+            pool = by_provider_id
+
     matches = [
         item
-        for item in candidates
+        for item in pool
         if item.provider_flight_iata == flight_iata
         and item.flight_date == flight_date
         and item.departure_iata == departure_iata
         and item.arrival_iata == arrival_iata
     ]
     if not matches:
+        if provider_flight_id and pool is not candidates:
+            return pool[0]
         return None
     if len(matches) == 1:
         return matches[0]

@@ -28,7 +28,7 @@ class FlightScheduler:
         self.quota = quota
         self.owner = f"scheduler-{uuid.uuid4().hex[:12]}"
         self.stop_event = asyncio.Event()
-        self._semaphore = asyncio.Semaphore(settings.aviationstack_max_concurrency)
+        self._semaphore = asyncio.Semaphore(settings.aeroapi_max_concurrency)
 
     def stop(self) -> None:
         self.stop_event.set()

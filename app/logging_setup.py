@@ -8,6 +8,8 @@ from typing import Any
 
 REDACTION_PATTERNS = (
     re.compile(r"(?i)((?:TELEGRAM_BOT_TOKEN|BOT_TOKEN)=)[^\s\"']+"),
+    re.compile(r"(?i)((?:FLIGHTAWARE_AEROAPI_KEY|AEROAPI_KEY)=)[^\s\"']+"),
+    re.compile(r"(?i)((?:x-apikey)\s*[:=]\s*)[^\s\"']+"),
     re.compile(r"(?i)(/bot)[0-9]+:[A-Za-z0-9_-]+"),
 )
 
@@ -62,6 +64,6 @@ def configure_logging(level: str, output_format: str) -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level.upper())
-    # httpx logs complete request URLs, including query-string credentials.
+    # Provider requests are logged explicitly with stable structured context.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)

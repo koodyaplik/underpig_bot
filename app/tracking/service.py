@@ -1,20 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app.aviationstack.client import AviationstackClient
-from app.aviationstack.errors import AviationstackError, QuotaExceededError
-from app.aviationstack.matching import match_tracked_instance
-from app.aviationstack.normalize import (
+from app.aeroapi.client import AeroApiClient
+from app.aeroapi.errors import AeroApiError, QuotaExceededError
+from app.aeroapi.matching import match_tracked_instance
+from app.aeroapi.normalize import (
     candidate_to_state,
-    normalize_future_response,
-    normalize_realtime_response,
+    normalize_flights_response,
+    normalize_schedule_response,
+    schedule_airport_codes,
 )
-from app.aviationstack.selection import select_flight_candidates
+from app.aeroapi.selection import select_flight_candidates
 from app.config import Settings
 from app.domain.models import FlightCandidate, SubscriptionResult
 from app.notifications.formatter import format_change_message, format_subscription_snapshot
@@ -32,7 +34,7 @@ class TrackingService:
         *,
         settings: Settings,
         db: Database,
-        client: AviationstackClient,
+        client: AeroApiClient,
         quota: QuotaManager,
     ) -> None:
         self.settings = settings
@@ -52,6 +54,18 @@ class TrackingService:
         flight_date: str | None,
         departure_iata: str | None,
     ) -> SubscriptionResult:
+        if not flight_date:
+            return SubscriptionResult(status="error", message="Выберите дату вылета.")
+        try:
+            selected_date = date.fromisoformat(flight_date)
+        except ValueError:
+            return SubscriptionResult(status="error", message="Некорректная дата вылета.")
+        today = self.local_today()
+        if selected_date < today or selected_date > today + timedelta(days=363):
+            return SubscriptionResult(
+                status="error",
+                message="Можно выбрать дату от сегодня до 363 дней вперед.",
+            )
         existing = await self.db.find_user_matching_subscriptions(
             user_id=user_id,
             chat_id=chat_id,
@@ -106,31 +120,21 @@ class TrackingService:
                 message="Недостаточно доступной квоты для нового отслеживания.",
             )
         try:
-            far_future = bool(
-                flight_date
-                and date.fromisoformat(flight_date) > self.local_today() + timedelta(days=7)
-            )
+            far_future = selected_date > today + timedelta(days=2)
             if far_future:
-                if not departure_iata:
-                    return SubscriptionResult(
-                        status="needs_departure",
-                        message=(
-                            "Для рейса более чем через семь дней укажите аэропорт отправления: "
-                            f"/flight {flight_iata} {flight_date} GOJ"
-                        ),
-                    )
-                payload = await self.client.search_future(
+                payload = await self.client.search_schedules(
                     flight_iata,
                     flight_date=flight_date,
-                    departure_iata=departure_iata,
                     flight_id=None,
-                    trigger_type="user_search_future",
+                    trigger_type="user_search_schedule",
                     priority=10,
                 )
-                candidates = normalize_future_response(
-                    payload,
+                candidates = await self._normalize_schedule(
+                    payload=payload,
                     requested_flight_iata=flight_iata,
                     requested_date=flight_date,
+                    flight_id=None,
+                    priority=10,
                 )
             else:
                 payload = await self.client.search_flights(
@@ -139,27 +143,25 @@ class TrackingService:
                     trigger_type="user_search",
                     priority=10,
                 )
-                candidates = normalize_realtime_response(
+                candidates = normalize_flights_response(
                     payload,
                     requested_flight_iata=flight_iata,
-                    time_mode=self.settings.aviationstack_time_mode,
+                    requested_date=flight_date,
                 )
         except QuotaExceededError:
             return SubscriptionResult(
-                status="quota", message="Лимит запросов Aviationstack временно исчерпан."
+                status="quota", message="Локальный лимит запросов AeroAPI временно исчерпан."
             )
-        except AviationstackError as exc:
+        except AeroApiError as exc:
             LOGGER.warning(
                 "Initial flight search failed",
                 extra={"event": "initial_search_failed", "api_error_code": exc.code},
             )
-            if exc.code == "function_access_restricted":
-                message = "Текущий тариф Aviationstack не поддерживает такой поиск."
-            elif exc.code in {"http_401", "http_403"}:
-                message = (
-                    "Aviationstack отклонил запрос. Проверьте API-ключ и доступные функции тарифа."
-                )
-            elif exc.code in {"provider_circuit_open", "invalid_access_key", "inactive_user"}:
+            if exc.http_status == 403:
+                message = "Текущий тариф FlightAware AeroAPI не поддерживает этот поиск."
+            elif exc.http_status == 401:
+                message = "FlightAware AeroAPI отклонил ключ. Проверьте конфигурацию."
+            elif exc.code == "provider_circuit_open":
                 message = "Источник данных временно недоступен из-за ошибки конфигурации."
             else:
                 message = "Не удалось получить данные о рейсе. Попробуйте позже."
@@ -175,7 +177,7 @@ class TrackingService:
         if not selected:
             return SubscriptionResult(
                 status="not_found",
-                message="Подходящий рейс не найден. Проверьте номер, дату и аэропорт.",
+                message="Подходящий рейс не найден. Проверьте номер и дату.",
             )
         if len(selected) > 1:
             return SubscriptionResult(
@@ -252,37 +254,50 @@ class TrackingService:
         now = int(time.time())
         try:
             requested_date = str(flight["flight_date"])
-            far_future = str(flight["tracking_state"]) == "future_scheduled" and date.fromisoformat(
-                requested_date
-            ) > self.local_today() + timedelta(days=7)
+            requested_iata = str(flight["requested_flight_iata"])
+            stored_candidate = FlightCandidate.from_dict(
+                json.loads(str(flight["latest_candidate_json"]))
+            )
+            provider_flight_id = stored_candidate.provider_flight_id
+            far_future = date.fromisoformat(requested_date) > self.local_today() + timedelta(days=2)
             if far_future:
-                payload = await self.client.search_future(
-                    str(flight["requested_flight_iata"]),
+                payload = await self.client.search_schedules(
+                    requested_iata,
                     flight_date=requested_date,
-                    departure_iata=str(flight["identity_departure_iata"]),
                     flight_id=flight_id,
-                    trigger_type="scheduler_future",
+                    trigger_type="scheduler_schedule",
                     priority=int(flight["polling_priority"]),
                 )
-                candidates = normalize_future_response(
-                    payload,
-                    requested_flight_iata=str(flight["requested_flight_iata"]),
+                candidates = await self._normalize_schedule(
+                    payload=payload,
+                    requested_flight_iata=requested_iata,
                     requested_date=requested_date,
+                    flight_id=flight_id,
+                    priority=int(flight["polling_priority"]),
                 )
             else:
-                payload = await self.client.search_flights(
-                    str(flight["requested_flight_iata"]),
-                    flight_id=flight_id,
-                    trigger_type="scheduler",
-                    priority=int(flight["polling_priority"]),
-                )
-                candidates = normalize_realtime_response(
+                if provider_flight_id:
+                    payload = await self.client.get_flight(
+                        provider_flight_id,
+                        flight_id=flight_id,
+                        trigger_type="scheduler_by_fa_id",
+                        priority=int(flight["polling_priority"]),
+                    )
+                else:
+                    payload = await self.client.search_flights(
+                        requested_iata,
+                        flight_id=flight_id,
+                        trigger_type="scheduler_by_ident",
+                        priority=int(flight["polling_priority"]),
+                    )
+                candidates = normalize_flights_response(
                     payload,
-                    requested_flight_iata=str(flight["requested_flight_iata"]),
-                    time_mode=self.settings.aviationstack_time_mode,
+                    requested_flight_iata=requested_iata,
+                    requested_date=requested_date,
                 )
             candidate = match_tracked_instance(
                 candidates,
+                provider_flight_id=provider_flight_id,
                 flight_iata=str(flight["provider_flight_iata"]),
                 flight_date=requested_date,
                 departure_iata=str(flight["identity_departure_iata"]),
@@ -351,13 +366,8 @@ class TrackingService:
             )
         except QuotaExceededError:
             await self.db.suspend_flight(flight_id, owner=owner, state="suspended_quota")
-        except AviationstackError as exc:
-            if exc.code in {
-                "provider_circuit_open",
-                "invalid_access_key",
-                "missing_access_key",
-                "inactive_user",
-            }:
+        except AeroApiError as exc:
+            if exc.code == "provider_circuit_open" or exc.http_status == 401:
                 await self.db.suspend_flight(flight_id, owner=owner, state="suspended_provider")
                 return
             failures = int(flight["consecutive_failures"]) + 1
@@ -382,6 +392,51 @@ class TrackingService:
                 },
             )
 
+    async def _normalize_schedule(
+        self,
+        *,
+        payload: dict,
+        requested_flight_iata: str,
+        requested_date: str,
+        flight_id: int | None,
+        priority: int,
+    ) -> list[FlightCandidate]:
+        codes = sorted(
+            schedule_airport_codes(
+                payload,
+                requested_flight_iata=requested_flight_iata,
+            )
+        )[:20]
+        requests = [
+            self.client.get_airport(code, flight_id=flight_id, priority=priority) for code in codes
+        ]
+        results = await asyncio.gather(*requests, return_exceptions=True)
+        metadata: dict[str, dict] = {}
+        for requested_code, result in zip(codes, results, strict=True):
+            if isinstance(result, QuotaExceededError):
+                raise result
+            if isinstance(result, Exception):
+                LOGGER.warning(
+                    "Airport metadata lookup failed",
+                    extra={
+                        "event": "airport_metadata_failed",
+                        "airport_code": requested_code,
+                        "api_error_code": getattr(result, "code", "unknown_error"),
+                    },
+                )
+                continue
+            for field in ("airport_code", "code_icao", "code_iata", "code_lid"):
+                code = result.get(field)
+                if isinstance(code, str) and code:
+                    metadata[code.upper()] = result
+            metadata[requested_code] = result
+        return normalize_schedule_response(
+            payload,
+            requested_flight_iata=requested_flight_iata,
+            requested_date=requested_date,
+            airport_metadata=metadata,
+        )
+
     async def _check_user_limit(self, user_id: int) -> SubscriptionResult | None:
         if (
             await self.db.count_active_subscriptions(user_id)
@@ -397,7 +452,7 @@ class TrackingService:
         if not flight_date:
             return 80
         days = max(0, (date.fromisoformat(flight_date) - self.local_today()).days)
-        return 80 + min(days, 30) * (1 if days > 7 else 4)
+        return 80 + min(days, 365)
 
     def _next_tracking_state(
         self, flight: dict, candidate: FlightCandidate, now: int
@@ -417,7 +472,7 @@ class TrackingService:
             return "incident", None, None
         if status == "diverted":
             return "diverted", None, None
-        if candidate.source_kind == "future":
+        if candidate.source_kind == "schedule":
             return "future_scheduled", None, None
         return "scheduled", None, None
 
