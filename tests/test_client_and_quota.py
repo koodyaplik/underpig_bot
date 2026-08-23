@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import httpx
+import pytest
+
+from app.aviationstack.client import AviationstackClient, split_flight_iata
+from app.aviationstack.errors import QuotaExceededError
+from app.config import Settings
+from app.storage.db import Database
+from app.tracking.quota import QuotaManager
+
+
+@pytest.mark.asyncio
+async def test_client_records_attempt_and_redacts_storage(tmp_path: Path) -> None:
+    settings = Settings(
+        telegram_bot_token="123456:TEST_TOKEN",
+        aviationstack_api_key="very-secret-key",
+        database_path=str(tmp_path / "test.db"),
+        aviationstack_monthly_request_limit=10,
+        aviationstack_request_reserve=1,
+        aviationstack_hard_request_cap=10,
+        _env_file=None,
+    )
+    db = Database(settings.database_path)
+    await db.connect()
+    await db.migrate()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["access_key"] == "very-secret-key"
+        return httpx.Response(200, json={"pagination": {}, "data": []})
+
+    quota = QuotaManager(db, settings)
+    client = AviationstackClient(
+        settings=settings,
+        db=db,
+        quota=quota,
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        await client.initialize()
+        payload = await client.search_flights(
+            "FV6106", flight_date=None, flight_id=None, trigger_type="test", priority=10
+        )
+        assert payload["data"] == []
+        assert await quota.usage() == 1
+        row = await db.fetchone("SELECT endpoint_name, api_error_code FROM api_requests")
+        assert dict(row) == {"endpoint_name": "flights", "api_error_code": None}
+    finally:
+        await client.close()
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_reserve_is_protected_for_priority_requests(tmp_path: Path) -> None:
+    settings = Settings(
+        telegram_bot_token="123456:TEST_TOKEN",
+        aviationstack_api_key="key",
+        database_path=str(tmp_path / "test.db"),
+        aviationstack_monthly_request_limit=2,
+        aviationstack_request_reserve=1,
+        aviationstack_hard_request_cap=2,
+        _env_file=None,
+    )
+    db = Database(settings.database_path)
+    await db.connect()
+    await db.migrate()
+    quota = QuotaManager(db, settings)
+    try:
+        await quota.reserve_request(
+            endpoint_name="flights", flight_id=None, trigger_type="test", priority=10
+        )
+        with pytest.raises(QuotaExceededError):
+            await quota.reserve_request(
+                endpoint_name="flights", flight_id=None, trigger_type="test", priority=10
+            )
+        await quota.reserve_request(
+            endpoint_name="flights", flight_id=None, trigger_type="test", priority=90
+        )
+        with pytest.raises(QuotaExceededError):
+            await quota.reserve_request(
+                endpoint_name="flights", flight_id=None, trigger_type="test", priority=90
+            )
+    finally:
+        await db.close()
+
+
+def test_numeric_airline_designator_is_supported() -> None:
+    assert split_flight_iata("5N123") == ("5N", "123")
+
+
+def test_legacy_bot_token_environment_name_is_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOT_TOKEN", "123456:LEGACY_TOKEN")
+    monkeypatch.setenv("AVIATIONSTACK_API_KEY", "test-key")
+
+    settings = Settings(
+        database_path="test.db",
+        aviationstack_monthly_request_limit=100,
+        aviationstack_request_reserve=10,
+        aviationstack_hard_request_cap=100,
+        _env_file=None,
+    )
+
+    assert settings.telegram_token == "123456:LEGACY_TOKEN"
