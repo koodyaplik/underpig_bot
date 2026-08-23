@@ -197,9 +197,7 @@ def schedule_airport_codes(payload: object, *, requested_flight_iata: str) -> se
             continue
         for prefix in ("origin", "destination"):
             code = _code(
-                item.get(f"{prefix}_icao")
-                or item.get(f"{prefix}_iata")
-                or item.get(prefix)
+                item.get(f"{prefix}_icao") or item.get(f"{prefix}_iata") or item.get(prefix)
             )
             if code:
                 codes.add(code)
