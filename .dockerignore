@@ -1,5 +1,12 @@
-*
-!Dockerfile
-!requirements.txt
-!bot.py
-!healthcheck.py
+.git
+.env
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+tests
+data
+models
+*.db
+*.db-shm
+*.db-wal

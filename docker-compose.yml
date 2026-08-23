@@ -1,32 +1,30 @@
-version: "3.9"
-
 services:
-
-  whisperbot:
-
+  flight-bot:
     build: .
-
-    restart: always
-
-    # Keep Whisper from exhausting all host memory.
-    mem_limit: 2560m
-    memswap_limit: 3072m
-
     env_file:
       - .env
-
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    mem_limit: 2560m
+    memswap_limit: 3072m
+    volumes:
+      - flight_data:/data
+      - whisper_models:/models
     healthcheck:
-      test: ["CMD", "python", "healthcheck.py"]
-      interval: 2m
-      timeout: 15s
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 30s
+      timeout: 10s
       retries: 3
-      start_period: 3m
-
+      start_period: 45s
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "3"
+    security_opt:
+      - no-new-privileges:true
 
-    volumes:
-      - ./models:/root/.cache/huggingface
+volumes:
+  flight_data:
+  whisper_models:

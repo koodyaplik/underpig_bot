@@ -1,17 +1,24 @@
 FROM python:3.12-slim
 
-ENV PYTHONUNBUFFERED=1
-
-RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-COPY requirements.txt .
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system bot \
+    && useradd --system --gid bot --home-dir /app bot \
+    && mkdir -p /data /models \
+    && chown bot:bot /data /models
 
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml README.md ./
+COPY app ./app
 
-COPY bot.py healthcheck.py ./
+RUN pip install --upgrade pip && pip install ".[voice]"
 
-CMD ["python","bot.py"]
+USER bot
+
+CMD ["python", "-m", "app.main"]
