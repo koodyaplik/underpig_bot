@@ -53,6 +53,50 @@ async def test_client_records_attempt_and_redacts_storage(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_date_filter", [False, True])
+async def test_flight_date_query_filter_is_configurable(
+    tmp_path: Path, use_date_filter: bool
+) -> None:
+    settings = Settings(
+        telegram_bot_token="123456:TEST_TOKEN",
+        aviationstack_api_key="test-key",
+        aviationstack_use_flight_date_filter=use_date_filter,
+        database_path=str(tmp_path / f"filter-{use_date_filter}.db"),
+        aviationstack_monthly_request_limit=10,
+        aviationstack_request_reserve=1,
+        aviationstack_hard_request_cap=10,
+        _env_file=None,
+    )
+    db = Database(settings.database_path)
+    await db.connect()
+    await db.migrate()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert ("flight_date" in request.url.params) is use_date_filter
+        if use_date_filter:
+            assert request.url.params["flight_date"] == "2026-08-23"
+        return httpx.Response(200, json={"pagination": {}, "data": []})
+
+    client = AviationstackClient(
+        settings=settings,
+        db=db,
+        quota=QuotaManager(db, settings),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        await client.search_flights(
+            "FV6106",
+            flight_date="2026-08-23",
+            flight_id=None,
+            trigger_type="test",
+            priority=10,
+        )
+    finally:
+        await client.close()
+        await db.close()
+
+
+@pytest.mark.asyncio
 async def test_reserve_is_protected_for_priority_requests(tmp_path: Path) -> None:
     settings = Settings(
         telegram_bot_token="123456:TEST_TOKEN",

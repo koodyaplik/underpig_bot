@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     aviationstack_api_key: SecretStr
     aviationstack_base_url: str = "https://api.aviationstack.com/v1"
     aviationstack_time_mode: Literal["wall_clock", "iso8601"] = "wall_clock"
+    aviationstack_use_flight_date_filter: bool = False
     aviationstack_monthly_request_limit: int = 10_000
     aviationstack_request_reserve: int = 500
     aviationstack_hard_request_cap: int = 10_000

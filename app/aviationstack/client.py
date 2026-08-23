@@ -72,7 +72,7 @@ class AviationstackClient:
         priority: int,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"flight_iata": flight_iata, "limit": 100, "offset": 0}
-        if flight_date:
+        if flight_date and self.settings.aviationstack_use_flight_date_filter:
             params["flight_date"] = flight_date
         return await self._request(
             "/flights",

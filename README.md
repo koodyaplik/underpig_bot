@@ -33,9 +33,11 @@
 - «Завтра»;
 - «Послезавтра»;
 - «Другая дата» — открывает inline-календарь с перелистыванием месяцев;
-- «Не знаю дату» — выполняет один экономный поиск без `flight_date`.
+- «Не знаю дату» — выполняет один поиск и выбирает текущий рейс локально.
 
 До нажатия кнопки Aviationstack не вызывается. Обычное сообщение `FV6106` не запускает поиск.
+
+По умолчанию бот не передает `flight_date` в `/v1/flights`, потому что часть тарифов отвечает на такой параметр ошибкой `function_access_restricted`. Бот запрашивает рейсы по номеру и затем строго фильтрует выбранную дату локально. Если тариф гарантированно поддерживает серверный фильтр, его можно включить через `AVIATIONSTACK_USE_FLIGHT_DATE_FILTER=true`.
 
 Дату можно указать сразу:
 
@@ -149,6 +151,7 @@ ruff format --check .
 
 ```text
 AVIATIONSTACK_TIME_MODE=wall_clock
+AVIATIONSTACK_USE_FLIGHT_DATE_FILTER=false
 AVIATIONSTACK_MONTHLY_REQUEST_LIMIT=10000
 AVIATIONSTACK_REQUEST_RESERVE=500
 AVIATIONSTACK_HARD_REQUEST_CAP=10000
