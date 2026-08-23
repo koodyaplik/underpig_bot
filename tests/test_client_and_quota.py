@@ -70,6 +70,78 @@ async def test_client_sends_aeroapi_contract_and_logs_url_without_key(
 
 
 @pytest.mark.asyncio
+async def test_extended_logging_writes_full_aeroapi_response(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = make_settings(tmp_path, aeroapi_extended_logging=True)
+    db = Database(settings.database_path)
+    await db.connect()
+    await db.migrate()
+
+    response_payload = {
+        "links": {"next": ""},
+        "flights": [{"fa_flight_id": "full-response-test", "status": "En Route"}],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=response_payload)
+
+    client = AeroApiClient(
+        settings=settings,
+        db=db,
+        quota=QuotaManager(db, settings),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with caplog.at_level(logging.INFO, logger="app.aeroapi.client"):
+            await client.search_flights("FV6106", flight_id=None, trigger_type="test", priority=10)
+        records = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "aeroapi_response"
+        ]
+        assert len(records) == 1
+        assert records[0].http_status == 200
+        assert records[0].endpoint_name == "flights_by_ident"
+        assert records[0].flight_id is None
+        assert '"fa_flight_id":"full-response-test"' in records[0].getMessage()
+        assert '"status":"En Route"' in records[0].getMessage()
+    finally:
+        await client.close()
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_full_aeroapi_response_is_not_logged_by_default(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = make_settings(tmp_path)
+    db = Database(settings.database_path)
+    await db.connect()
+    await db.migrate()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"private_diagnostic_value": "not-logged"})
+
+    client = AeroApiClient(
+        settings=settings,
+        db=db,
+        quota=QuotaManager(db, settings),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with caplog.at_level(logging.INFO, logger="app.aeroapi.client"):
+            await client.search_flights("FV6106", flight_id=None, trigger_type="test", priority=10)
+        assert "not-logged" not in caplog.text
+        assert not any(
+            getattr(record, "event", None) == "aeroapi_response" for record in caplog.records
+        )
+    finally:
+        await client.close()
+        await db.close()
+
+
+@pytest.mark.asyncio
 async def test_schedule_request_uses_date_range_and_flight_filters(tmp_path: Path) -> None:
     settings = make_settings(tmp_path)
     db = Database(settings.database_path)

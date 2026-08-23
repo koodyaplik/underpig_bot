@@ -83,3 +83,66 @@ def test_late_arrival_uses_delay_wording_and_russian_plural() -> None:
     )
 
     assert "Ожидается задержка прилёта на 22 минуты." in message
+
+
+def test_takeoff_and_landing_notifications_use_runway_events() -> None:
+    candidate = make_candidate(status="landed")
+    candidate.actual_takeoff = parse_aeroapi_time(
+        "2026-08-23T13:25:00+00:00", candidate.departure_timezone
+    )
+    candidate.actual_landing = parse_aeroapi_time(
+        "2026-08-23T15:00:00+00:00", candidate.arrival_timezone
+    )
+
+    message = format_change_message(
+        candidate,
+        [
+            Change("departure.takeoff_actual", None, candidate.actual_takeoff.to_dict()),
+            Change("arrival.landing_actual", None, candidate.actual_landing.to_dict()),
+        ],
+        tracking_state="post_landing",
+        finished_reason=None,
+    )
+
+    assert "Взлетел: <b>" in message
+    assert "Приземлился: <b>" in message
+
+
+def test_runway_departure_fallback_is_not_duplicated_as_gate_departure() -> None:
+    candidate = make_candidate(status="active")
+    candidate.actual_departure = parse_aeroapi_time(
+        "2026-08-23T13:25:00+00:00", candidate.departure_timezone
+    )
+    candidate.actual_takeoff = candidate.actual_departure
+    candidate.raw = {"actual_out": None, "actual_off": "2026-08-23T13:25:00+00:00"}
+
+    message = format_change_message(
+        candidate,
+        [
+            Change("departure.actual", None, candidate.actual_departure.to_dict()),
+            Change("departure.takeoff_actual", None, candidate.actual_takeoff.to_dict()),
+        ],
+        tracking_state="active",
+        finished_reason=None,
+    )
+
+    assert "Взлетел: <b>" in message
+    assert "Покинул гейт" not in message
+
+
+def test_gate_departure_does_not_claim_that_aircraft_took_off() -> None:
+    candidate = make_candidate(status="active")
+    candidate.actual_departure = parse_aeroapi_time(
+        "2026-08-23T13:04:00+00:00", candidate.departure_timezone
+    )
+    candidate.raw = {"actual_out": "2026-08-23T13:04:00+00:00", "actual_off": None}
+
+    message = format_change_message(
+        candidate,
+        [Change("departure.actual", None, candidate.actual_departure.to_dict())],
+        tracking_state="active",
+        finished_reason=None,
+    )
+
+    assert "Покинул гейт: <b>" in message
+    assert "Взлетел:" not in message

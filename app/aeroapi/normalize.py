@@ -162,6 +162,8 @@ def normalize_flight_item(
         provider_flight_id=_text(item.get("fa_flight_id")),
         source_kind="realtime",
         provider_status=_text(item.get("status")),
+        actual_takeoff=parse_aeroapi_time(item.get("actual_off"), departure_timezone),
+        actual_landing=parse_aeroapi_time(item.get("actual_on"), arrival_timezone),
     )
 
 
@@ -332,7 +334,7 @@ def candidate_to_state(candidate: FlightCandidate, *, fetched_at_epoch: int) -> 
         candidate.arrival_delay,
     )
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "provider_flight_id": candidate.provider_flight_id,
         "flight_iata": candidate.requested_flight_iata,
         "flight_date": candidate.flight_date,
@@ -348,6 +350,7 @@ def candidate_to_state(candidate: FlightCandidate, *, fetched_at_epoch: int) -> 
             "scheduled": serialized(candidate.scheduled_departure),
             "estimated": serialized(candidate.estimated_departure),
             "actual": serialized(candidate.actual_departure),
+            "takeoff_actual": serialized(candidate.actual_takeoff),
             "delay_minutes": departure_delay,
             "terminal": candidate.departure_terminal,
             "gate": candidate.departure_gate,
@@ -356,6 +359,7 @@ def candidate_to_state(candidate: FlightCandidate, *, fetched_at_epoch: int) -> 
             "scheduled": serialized(candidate.scheduled_arrival),
             "estimated": serialized(candidate.estimated_arrival),
             "actual": serialized(candidate.actual_arrival),
+            "landing_actual": serialized(candidate.actual_landing),
             "delay_minutes": arrival_delay,
             "terminal": candidate.arrival_terminal,
             "gate": candidate.arrival_gate,

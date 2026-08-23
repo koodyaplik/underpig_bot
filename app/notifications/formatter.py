@@ -154,6 +154,7 @@ def format_change_message(
         for change in changes
         if change.field in {"departure.actual", "arrival.actual"}
     }
+    change_fields = {change.field for change in changes}
     for change in changes:
         if change.field in {"api_status", "provider_status"}:
             status = display_status(candidate.provider_status, candidate.api_status)
@@ -163,9 +164,23 @@ def format_change_message(
             lines.append(
                 f"{label}: {_format_parsed(change.old)} → <b>{_format_parsed(change.new)}</b>"
             )
+        elif change.field == "departure.takeoff_actual":
+            lines.append(f"Взлетел: <b>{_format_parsed(change.new)}</b>")
+        elif change.field == "arrival.landing_actual":
+            lines.append(f"Приземлился: <b>{_format_parsed(change.new)}</b>")
         elif change.field.endswith(".actual"):
             section = change.field.split(".", 1)[0]
-            label = "Фактический вылет" if section == "departure" else "Фактическое прибытие"
+            if (
+                section == "departure"
+                and not candidate.raw.get("actual_out")
+                and "departure.takeoff_actual" in change_fields
+            ) or (
+                section == "arrival"
+                and not candidate.raw.get("actual_in")
+                and "arrival.landing_actual" in change_fields
+            ):
+                continue
+            label = "Покинул гейт" if section == "departure" else "Прибыл к гейту"
             lines.append(f"{label}: <b>{_format_parsed(change.new)}</b>")
             delay = _actual_delay(candidate, section)
             if delay is not None:

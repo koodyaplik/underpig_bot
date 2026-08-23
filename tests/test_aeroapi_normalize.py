@@ -26,6 +26,8 @@ def test_live_flight_is_normalized_from_aeroapi_fields() -> None:
                 "scheduled_out": "2026-08-23T10:15:00Z",
                 "estimated_out": "2026-08-23T10:45:00Z",
                 "scheduled_in": "2026-08-23T12:10:00Z",
+                "actual_off": "2026-08-23T10:56:00Z",
+                "actual_on": "2026-08-23T12:01:00Z",
                 "departure_delay": 1800,
                 "gate_origin": "12",
                 "status": "Scheduled / Delayed",
@@ -46,6 +48,8 @@ def test_live_flight_is_normalized_from_aeroapi_fields() -> None:
     assert candidate.departure_delay == 30
     assert candidate.departure_gate == "12"
     assert candidate.provider_status == "Scheduled / Delayed"
+    assert candidate.actual_takeoff.local_iso == "2026-08-23T13:56:00+03:00"
+    assert candidate.actual_landing.local_iso == "2026-08-23T15:01:00+03:00"
 
 
 def test_live_flight_keeps_source_status_when_arrival_confirmation_is_missing() -> None:

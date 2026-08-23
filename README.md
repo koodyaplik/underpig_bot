@@ -163,10 +163,13 @@ AEROAPI_HARD_REQUEST_CAP=10000
 AEROAPI_ALLOW_OVERAGE=false
 AEROAPI_BILLING_CYCLE_DAY=1
 AEROAPI_MAX_CONCURRENCY=5
+AEROAPI_EXTENDED_LOGGING=false
 BOT_DEFAULT_TIMEZONE=Europe/Moscow
 ```
 
 Лимит внутри бота считает HTTP-запросы и защищает от неконтролируемого polling. Он не моделирует стоимость разных endpoints FlightAware и не заменяет контроль расходов в кабинете AeroAPI.
+
+Для диагностики можно включить `AEROAPI_EXTENDED_LOGGING=true`. Тогда после каждого запроса в лог записываются HTTP-статус и полный необработанный ответ FlightAware. Ключ `x-apikey` передается только в заголовке запроса и в лог не выводится. Полный ответ может быть большим, поэтому постоянно держать этот режим включенным не рекомендуется.
 
 ## Ограничения
 

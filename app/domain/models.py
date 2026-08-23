@@ -76,6 +76,8 @@ class FlightCandidate:
     provider_flight_id: str | None = None
     source_kind: str = "realtime"
     provider_status: str | None = None
+    actual_takeoff: ParsedTime | None = None
+    actual_landing: ParsedTime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -87,6 +89,8 @@ class FlightCandidate:
         copied.setdefault("provider_flight_id", None)
         copied.setdefault("source_kind", "realtime")
         copied["provider_status"] = provider_status_from_payload(copied)
+        copied.setdefault("actual_takeoff", None)
+        copied.setdefault("actual_landing", None)
         for field_name in (
             "scheduled_departure",
             "estimated_departure",
@@ -94,6 +98,8 @@ class FlightCandidate:
             "scheduled_arrival",
             "estimated_arrival",
             "actual_arrival",
+            "actual_takeoff",
+            "actual_landing",
         ):
             copied[field_name] = ParsedTime.from_dict(copied.get(field_name))
         return cls(**copied)

@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     aeroapi_allow_overage: bool = False
     aeroapi_billing_cycle_day: int = 1
     aeroapi_max_concurrency: int = 5
+    aeroapi_extended_logging: bool = False
 
     database_path: str = "/data/flights.db"
 

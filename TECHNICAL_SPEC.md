@@ -166,6 +166,8 @@ AeroAPI request: GET https://aeroapi.flightaware.com/aeroapi/...
 
 Лог содержит метод, endpoint и query string. Значение `x-apikey` не логируется, потому что ключ передается заголовком, а не URL. Форматтер дополнительно удаляет `FLIGHTAWARE_AEROAPI_KEY`, `AEROAPI_KEY` и `x-apikey`, если они случайно попадут в сообщение.
 
+При `AEROAPI_EXTENDED_LOGGING=true` после каждого запроса дополнительно записываются HTTP-статус и полный необработанный ответ AeroAPI, включая ответы с ошибкой. По умолчанию режим отключен из-за объема логов.
+
 ## 4. Нормализация данных
 
 ### 4.1. Идентификаторы
@@ -194,6 +196,11 @@ AeroAPI передает времена в ISO 8601, обычно в UTC. Фун
 Для вылета используются gate times `scheduled_out`, `estimated_out`, `actual_out` с fallback на runway times `scheduled_off`, `estimated_off`, `actual_off`.
 
 Для прибытия используются `scheduled_in`, `estimated_in`, `actual_in` с fallback на `scheduled_on`, `estimated_on`, `actual_on`.
+
+Фазы движения различаются отдельно: `actual_out` означает отправление от гейта, `actual_off` —
+фактический взлет, `actual_on` — посадку на полосу, `actual_in` — прибытие к гейту. Появление
+`actual_off` и `actual_on` всегда создает отдельное уведомление. Значения `departure_delay` и
+`arrival_delay` не используются как доказательство наступления этих событий.
 
 ### 4.3. Статус
 
@@ -323,6 +330,7 @@ AEROAPI_HARD_REQUEST_CAP=10000
 AEROAPI_ALLOW_OVERAGE=false
 AEROAPI_BILLING_CYCLE_DAY=1
 AEROAPI_MAX_CONCURRENCY=5
+AEROAPI_EXTENDED_LOGGING=false
 
 BOT_DEFAULT_TIMEZONE=Europe/Moscow
 DATABASE_PATH=/data/flights.db

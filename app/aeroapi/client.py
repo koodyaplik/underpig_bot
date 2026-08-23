@@ -186,6 +186,17 @@ class AeroApiClient:
             async with self._semaphore:
                 response = await self.http.send(request)
             status = response.status_code
+            if self.settings.aeroapi_extended_logging:
+                LOGGER.info(
+                    "AeroAPI response body: %s",
+                    response.text,
+                    extra={
+                        "event": "aeroapi_response",
+                        "endpoint_name": endpoint_name,
+                        "http_status": status,
+                        "flight_id": flight_id,
+                    },
+                )
             retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
             try:
                 payload = response.json()

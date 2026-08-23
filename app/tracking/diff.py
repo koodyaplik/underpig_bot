@@ -56,8 +56,12 @@ def diff_flight_state(old: dict | None, new: dict, *, time_threshold_minutes: in
     elif old_status != new_status and new_status is not None:
         changes.append(Change("api_status", old_status, new_status))
 
-    for section in ("departure", "arrival"):
-        for field in ("estimated", "actual"):
+    time_fields = {
+        "departure": ("estimated", "actual", "takeoff_actual"),
+        "arrival": ("estimated", "actual", "landing_actual"),
+    }
+    for section, section_time_fields in time_fields.items():
+        for field in section_time_fields:
             old_value, new_value = _get(old, section, field), _get(new, section, field)
             if old_value == new_value or new_value is None:
                 continue
@@ -97,17 +101,30 @@ def preserve_transient_nulls(old: dict | None, new: dict) -> dict:
         "departure": dict(new.get("departure", {})),
         "arrival": dict(new.get("arrival", {})),
     }
-    for section in ("departure", "arrival"):
-        old_section = old.get(section, {})
-        for field in (
+    preserved_fields = {
+        "departure": (
             "scheduled",
             "estimated",
             "actual",
+            "takeoff_actual",
+            "delay_minutes",
+            "terminal",
+            "gate",
+        ),
+        "arrival": (
+            "scheduled",
+            "estimated",
+            "actual",
+            "landing_actual",
             "delay_minutes",
             "terminal",
             "gate",
             "baggage",
-        ):
+        ),
+    }
+    for section, section_fields in preserved_fields.items():
+        old_section = old.get(section, {})
+        for field in section_fields:
             if merged[section].get(field) is None and old_section.get(field) is not None:
                 merged[section][field] = old_section[field]
     if merged.get("aircraft_registration") is None and old.get("aircraft_registration") is not None:

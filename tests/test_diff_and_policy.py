@@ -3,6 +3,7 @@ from __future__ import annotations
 from conftest import make_candidate
 
 from app.aeroapi.normalize import candidate_to_state
+from app.aeroapi.time_parser import parse_aeroapi_time
 from app.tracking.diff import (
     Change,
     backfill_provider_status,
@@ -92,6 +93,23 @@ def test_effective_delay_is_derived_from_estimated_time() -> None:
         make_candidate(estimated="2026-08-23T14:05:00+00:00"), fetched_at_epoch=1
     )
     assert state["departure"]["delay_minutes"] == 50
+
+
+def test_takeoff_and_landing_are_independent_state_changes() -> None:
+    old = candidate_to_state(make_candidate(), fetched_at_epoch=1)
+    candidate = make_candidate(status="landed")
+    candidate.actual_takeoff = parse_aeroapi_time(
+        "2026-08-23T13:25:00+00:00", candidate.departure_timezone
+    )
+    candidate.actual_landing = parse_aeroapi_time(
+        "2026-08-23T15:00:00+00:00", candidate.arrival_timezone
+    )
+    new = candidate_to_state(candidate, fetched_at_epoch=2)
+
+    fields = {change.field for change in diff_flight_state(old, new, time_threshold_minutes=5)}
+
+    assert "departure.takeoff_actual" in fields
+    assert "arrival.landing_actual" in fields
 
 
 def test_transient_null_does_not_erase_known_gate() -> None:
