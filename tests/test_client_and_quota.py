@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.aviationstack.client import AviationstackClient, split_flight_iata
-from app.aviationstack.errors import QuotaExceededError
+from app.aviationstack.errors import AviationstackError, QuotaExceededError
 from app.config import Settings
 from app.storage.db import Database
 from app.tracking.quota import QuotaManager
@@ -83,6 +83,47 @@ async def test_reserve_is_protected_for_priority_requests(tmp_path: Path) -> Non
                 endpoint_name="flights", flight_id=None, trigger_type="test", priority=90
             )
     finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_non_json_http_error_keeps_http_status_classification(tmp_path: Path) -> None:
+    settings = Settings(
+        telegram_bot_token="123456:TEST_TOKEN",
+        aviationstack_api_key="test-key",
+        database_path=str(tmp_path / "test.db"),
+        aviationstack_monthly_request_limit=10,
+        aviationstack_request_reserve=1,
+        aviationstack_hard_request_cap=10,
+        _env_file=None,
+    )
+    db = Database(settings.database_path)
+    await db.connect()
+    await db.migrate()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="<html>Forbidden</html>")
+
+    client = AviationstackClient(
+        settings=settings,
+        db=db,
+        quota=QuotaManager(db, settings),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        with pytest.raises(AviationstackError) as error:
+            await client.search_flights(
+                "FV6106",
+                flight_date="2026-08-23",
+                flight_id=None,
+                trigger_type="test",
+                priority=10,
+            )
+        assert error.value.code == "http_403"
+        row = await db.fetchone("SELECT http_status, api_error_code FROM api_requests")
+        assert dict(row) == {"http_status": 403, "api_error_code": "http_403"}
+    finally:
+        await client.close()
         await db.close()
 
 

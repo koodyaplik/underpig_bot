@@ -156,6 +156,10 @@ class TrackingService:
             )
             if exc.code == "function_access_restricted":
                 message = "Текущий тариф Aviationstack не поддерживает такой поиск."
+            elif exc.code in {"http_401", "http_403"}:
+                message = (
+                    "Aviationstack отклонил запрос. Проверьте API-ключ и доступные функции тарифа."
+                )
             elif exc.code in {"provider_circuit_open", "invalid_access_key", "inactive_user"}:
                 message = "Источник данных временно недоступен из-за ошибки конфигурации."
             else:

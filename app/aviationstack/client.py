@@ -146,6 +146,15 @@ class AviationstackClient:
             try:
                 payload = response.json()
             except json.JSONDecodeError as exc:
+                if status >= 400:
+                    error_code = f"http_{status}"
+                    raise AviationstackError(
+                        f"Aviationstack HTTP {status} returned a non-JSON response",
+                        code=error_code,
+                        http_status=status,
+                        transient=status == 429 or status >= 500,
+                        retry_after=retry_after,
+                    ) from exc
                 raise AviationstackError(
                     "Aviationstack returned invalid JSON",
                     code="invalid_json",
