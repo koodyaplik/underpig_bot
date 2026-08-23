@@ -3,7 +3,12 @@ from __future__ import annotations
 from conftest import make_candidate
 
 from app.aeroapi.normalize import candidate_to_state
-from app.tracking.diff import diff_flight_state, preserve_transient_nulls
+from app.tracking.diff import (
+    Change,
+    backfill_provider_status,
+    diff_flight_state,
+    preserve_transient_nulls,
+)
 from app.tracking.policy import calculate_error_backoff, calculate_next_check
 
 
@@ -23,6 +28,63 @@ def test_gate_and_status_are_coalesced_as_changes() -> None:
     new = candidate_to_state(make_candidate(status="active", gate="12"), fetched_at_epoch=2)
     fields = {change.field for change in diff_flight_state(old, new, time_threshold_minutes=5)}
     assert fields == {"api_status", "departure.gate"}
+
+
+def test_provider_status_change_is_reported_verbatim() -> None:
+    old = candidate_to_state(
+        make_candidate(provider_status="Выл. / Прил. по расписанию"), fetched_at_epoch=1
+    )
+    new = candidate_to_state(
+        make_candidate(status="landed", provider_status="Прибыл"), fetched_at_epoch=2
+    )
+
+    changes = diff_flight_state(old, new, time_threshold_minutes=5)
+
+    assert Change("provider_status", "Выл. / Прил. по расписанию", "Прибыл") in changes
+    assert not [change for change in changes if change.field == "api_status"]
+
+
+def test_old_state_uses_saved_raw_status_to_detect_next_source_change() -> None:
+    stored_candidate = make_candidate(provider_status="В полете / По расписанию")
+    serialized = stored_candidate.to_dict()
+    serialized["raw"]["status"] = stored_candidate.provider_status
+    serialized.pop("provider_status")
+    restored_candidate = type(stored_candidate).from_dict(serialized)
+    old_state = candidate_to_state(stored_candidate, fetched_at_epoch=1)
+    old_state.pop("provider_status")
+    old_state = backfill_provider_status(old_state, restored_candidate.provider_status)
+    new_state = candidate_to_state(
+        make_candidate(provider_status="Вырулив. / Посадка закончена"), fetched_at_epoch=2
+    )
+
+    changes = diff_flight_state(old_state, new_state, time_threshold_minutes=5)
+
+    assert changes == [
+        Change(
+            "provider_status",
+            "В полете / По расписанию",
+            "Вырулив. / Посадка закончена",
+        )
+    ]
+
+
+def test_overdue_active_legacy_state_reports_current_source_status_once() -> None:
+    old_state = candidate_to_state(
+        make_candidate(provider_status="В полете / По расписанию"), fetched_at_epoch=1
+    )
+    old_state.pop("provider_status")
+    old_state = backfill_provider_status(
+        old_state,
+        "В полете / По расписанию",
+        notify_current=True,
+    )
+    new_state = candidate_to_state(
+        make_candidate(provider_status="Вырулив. / Посадка закончена"), fetched_at_epoch=2
+    )
+
+    changes = diff_flight_state(old_state, new_state, time_threshold_minutes=5)
+
+    assert changes == [Change("provider_status", None, "Вырулив. / Посадка закончена")]
 
 
 def test_effective_delay_is_derived_from_estimated_time() -> None:

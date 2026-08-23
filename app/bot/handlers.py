@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from collections import defaultdict, deque
 from datetime import date, datetime, timedelta
@@ -21,8 +22,9 @@ from app.bot.keyboards import (
 )
 from app.bot.validators import CommandValidationError, parse_flight_command
 from app.config import Settings
+from app.domain.models import provider_status_from_payload
+from app.notifications.formatter import display_status
 from app.storage.db import Database
-from app.tracking.diff import STATUS_RU
 from app.tracking.service import TrackingService
 
 HELP_TEXT = """<b>Underpig Bot</b>
@@ -301,7 +303,13 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
         for row in rows:
             subscription_id = int(row["subscription_id"])
             ids.append(subscription_id)
-            status = STATUS_RU.get(row["api_status"], row["api_status"] or STATUS_RU[None])
+            try:
+                provider_status = provider_status_from_payload(
+                    json.loads(str(row["latest_candidate_json"]))
+                )
+            except (AttributeError, TypeError, ValueError):
+                provider_status = None
+            status = display_status(provider_status, row["api_status"])
             lines.extend(
                 (
                     f"<b>№{subscription_id} · {escape(str(row['requested_flight_iata']))}</b>",

@@ -29,12 +29,31 @@ def _epoch(value: object) -> int | None:
     return value.get("utc_epoch") if isinstance(value, dict) else None
 
 
+def backfill_provider_status(
+    state: dict,
+    provider_status: str | None,
+    *,
+    notify_current: bool = False,
+) -> dict:
+    if "provider_status" in state:
+        return state
+    return {**state, "provider_status": None if notify_current else provider_status}
+
+
 def diff_flight_state(old: dict | None, new: dict, *, time_threshold_minutes: int) -> list[Change]:
     if not old:
         return []
     changes: list[Change] = []
     old_status, new_status = old.get("api_status"), new.get("api_status")
-    if old_status != new_status and new_status is not None:
+    old_provider_status = old.get("provider_status")
+    new_provider_status = new.get("provider_status")
+    if (
+        "provider_status" in old
+        and old_provider_status != new_provider_status
+        and new_provider_status is not None
+    ):
+        changes.append(Change("provider_status", old_provider_status, new_provider_status))
+    elif old_status != new_status and new_status is not None:
         changes.append(Change("api_status", old_status, new_status))
 
     for section in ("departure", "arrival"):
@@ -93,4 +112,6 @@ def preserve_transient_nulls(old: dict | None, new: dict) -> dict:
                 merged[section][field] = old_section[field]
     if merged.get("aircraft_registration") is None and old.get("aircraft_registration") is not None:
         merged["aircraft_registration"] = old["aircraft_registration"]
+    if merged.get("provider_status") is None and old.get("provider_status") is not None:
+        merged["provider_status"] = old["provider_status"]
     return merged

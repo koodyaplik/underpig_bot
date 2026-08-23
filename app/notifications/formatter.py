@@ -40,6 +40,12 @@ def candidate_label(candidate: FlightCandidate) -> str:
     )[:60]
 
 
+def display_status(provider_status: object, api_status: object) -> str:
+    if provider_status is not None and str(provider_status).strip():
+        return str(provider_status).strip()
+    return STATUS_RU.get(api_status, api_status or STATUS_RU[None])
+
+
 def format_subscription_snapshot(
     candidate: FlightCandidate,
     *,
@@ -48,7 +54,7 @@ def format_subscription_snapshot(
 ) -> str:
     dep_name = candidate.departure_airport or candidate.departure_iata
     arr_name = candidate.arrival_airport or candidate.arrival_iata
-    status = STATUS_RU.get(candidate.api_status, candidate.api_status or STATUS_RU[None])
+    status = display_status(candidate.provider_status, candidate.api_status)
     tail = (
         "Отслеживание включено."
         if tracking_enabled
@@ -80,8 +86,8 @@ def format_change_message(
         "",
     ]
     for change in changes:
-        if change.field == "api_status":
-            status = STATUS_RU.get(change.new, change.new or STATUS_RU[None])
+        if change.field in {"api_status", "provider_status"}:
+            status = display_status(candidate.provider_status, candidate.api_status)
             lines.append(f"Статус: <b>{_safe(status)}</b>")
         elif change.field.endswith(".estimated"):
             label = "Вылет" if change.field.startswith("departure") else "Прилет"

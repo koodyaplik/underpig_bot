@@ -45,6 +45,45 @@ def test_live_flight_is_normalized_from_aeroapi_fields() -> None:
     assert candidate.scheduled_departure.local_iso == "2026-08-23T13:15:00+03:00"
     assert candidate.departure_delay == 30
     assert candidate.departure_gate == "12"
+    assert candidate.provider_status == "Scheduled / Delayed"
+
+
+def test_live_flight_keeps_source_status_when_arrival_confirmation_is_missing() -> None:
+    payload = {
+        "flights": [
+            {
+                "ident": "SDM6175",
+                "ident_iata": "FV6175",
+                "codeshares_iata": ["SU6175"],
+                "fa_flight_id": "SDM6175-1787294809-airline-722p",
+                "origin": {
+                    "code_iata": "LED",
+                    "timezone": "Europe/Moscow",
+                },
+                "destination": {
+                    "code_iata": "VKO",
+                    "timezone": "Europe/Moscow",
+                },
+                "scheduled_out": "2026-08-23T13:00:00Z",
+                "actual_out": "2026-08-23T12:49:00Z",
+                "scheduled_in": "2026-08-23T14:35:00Z",
+                "estimated_in": "2026-08-23T14:20:00Z",
+                "actual_on": None,
+                "actual_in": None,
+                "status": "Вырулив. / Посадка закончена",
+            }
+        ]
+    }
+
+    candidates = normalize_flights_response(
+        payload,
+        requested_flight_iata="SU6175",
+        requested_date="2026-08-23",
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].api_status == "active"
+    assert candidates[0].provider_status == "Вырулив. / Посадка закончена"
 
 
 def test_schedule_uses_airport_timezones_to_filter_local_date() -> None:

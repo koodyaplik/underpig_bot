@@ -161,6 +161,7 @@ def normalize_flight_item(
         raw=item,
         provider_flight_id=_text(item.get("fa_flight_id")),
         source_kind="realtime",
+        provider_status=_text(item.get("status")),
     )
 
 
@@ -297,6 +298,7 @@ def normalize_schedule_response(
                 raw=item,
                 provider_flight_id=_text(item.get("fa_flight_id")),
                 source_kind="schedule",
+                provider_status=_text(item.get("status")),
             )
         )
     return result
@@ -330,11 +332,12 @@ def candidate_to_state(candidate: FlightCandidate, *, fetched_at_epoch: int) -> 
         candidate.arrival_delay,
     )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "provider_flight_id": candidate.provider_flight_id,
         "flight_iata": candidate.requested_flight_iata,
         "flight_date": candidate.flight_date,
         "api_status": candidate.api_status,
+        "provider_status": candidate.provider_status,
         "route": {
             "departure_iata": candidate.departure_iata,
             "departure_airport": candidate.departure_airport,

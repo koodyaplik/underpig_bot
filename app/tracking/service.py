@@ -21,7 +21,12 @@ from app.config import Settings
 from app.domain.models import FlightCandidate, SubscriptionResult
 from app.notifications.formatter import format_change_message, format_subscription_snapshot
 from app.storage.db import Database
-from app.tracking.diff import Change, diff_flight_state, preserve_transient_nulls
+from app.tracking.diff import (
+    Change,
+    backfill_provider_status,
+    diff_flight_state,
+    preserve_transient_nulls,
+)
 from app.tracking.policy import calculate_error_backoff, calculate_next_check
 from app.tracking.quota import QuotaManager
 
@@ -315,6 +320,17 @@ class TrackingService:
                 )
                 return
             old_state = json.loads(str(flight["normalized_state_json"]))
+            notify_current_provider_status = (
+                "provider_status" not in old_state
+                and candidate.api_status == "active"
+                and candidate.effective_arrival_epoch is not None
+                and now >= candidate.effective_arrival_epoch
+            )
+            old_state = backfill_provider_status(
+                old_state,
+                stored_candidate.provider_status,
+                notify_current=notify_current_provider_status,
+            )
             new_state = preserve_transient_nulls(
                 old_state, candidate_to_state(candidate, fetched_at_epoch=now)
             )
@@ -493,4 +509,8 @@ class TrackingService:
         if finished_reason:
             return f"finished_{finished_reason}"
         statuses = [change.new for change in changes if change.field == "api_status"]
-        return f"status_{statuses[-1]}" if statuses else "flight_changed"
+        if statuses:
+            return f"status_{statuses[-1]}"
+        if any(change.field == "provider_status" for change in changes):
+            return "provider_status_changed"
+        return "flight_changed"

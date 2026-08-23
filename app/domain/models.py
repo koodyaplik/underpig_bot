@@ -4,6 +4,22 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 
+def provider_status_from_payload(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("raw")
+    values = [payload.get("provider_status")]
+    if isinstance(raw, dict):
+        values.append(raw.get("status"))
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
 @dataclass(slots=True, frozen=True)
 class ParsedTime:
     raw: str | None
@@ -59,6 +75,7 @@ class FlightCandidate:
     raw: dict[str, Any]
     provider_flight_id: str | None = None
     source_kind: str = "realtime"
+    provider_status: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -69,6 +86,7 @@ class FlightCandidate:
         copied = dict(value)
         copied.setdefault("provider_flight_id", None)
         copied.setdefault("source_kind", "realtime")
+        copied["provider_status"] = provider_status_from_payload(copied)
         for field_name in (
             "scheduled_departure",
             "estimated_departure",

@@ -30,6 +30,7 @@ def make_candidate(
     scheduled: str = "2026-08-23T13:15:00+00:00",
     estimated: str | None = None,
     status: str | None = "scheduled",
+    provider_status: str | None = None,
     gate: str | None = None,
     baggage: str | None = None,
     source_kind: str = "realtime",
@@ -71,4 +72,5 @@ def make_candidate(
         raw={"flight_date": flight_date},
         provider_flight_id="FV6106-20260823-test",
         source_kind=source_kind,
+        provider_status=provider_status,
     )
