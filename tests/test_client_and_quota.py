@@ -103,3 +103,34 @@ def test_legacy_bot_token_environment_name_is_supported(monkeypatch: pytest.Monk
     )
 
     assert settings.telegram_token == "123456:LEGACY_TOKEN"
+
+
+@pytest.mark.parametrize(
+    ("admin_ids", "allowed_ids", "expected_admins", "expected_allowed"),
+    [
+        ("", "", [], []),
+        ("1001, 1002", "2001", [1001, 1002], [2001]),
+    ],
+)
+def test_user_id_lists_accept_env_format(
+    monkeypatch: pytest.MonkeyPatch,
+    admin_ids: str,
+    allowed_ids: str,
+    expected_admins: list[int],
+    expected_allowed: list[int],
+) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:TEST_TOKEN")
+    monkeypatch.setenv("AVIATIONSTACK_API_KEY", "test-key")
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_IDS", admin_ids)
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", allowed_ids)
+
+    settings = Settings(
+        database_path="test.db",
+        aviationstack_monthly_request_limit=100,
+        aviationstack_request_reserve=10,
+        aviationstack_hard_request_cap=100,
+        _env_file=None,
+    )
+
+    assert settings.telegram_admin_user_ids == expected_admins
+    assert settings.telegram_allowed_user_ids == expected_allowed

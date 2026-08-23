@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def _parse_id_list(value: object) -> list[int]:
@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr = Field(
         validation_alias=AliasChoices("TELEGRAM_BOT_TOKEN", "BOT_TOKEN")
     )
-    telegram_admin_user_ids: list[int] = Field(default_factory=list)
-    telegram_allowed_user_ids: list[int] = Field(default_factory=list)
+    telegram_admin_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+    telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
     telegram_proxy: str | None = None
     bot_default_timezone: str = "Europe/Moscow"
 
