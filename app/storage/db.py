@@ -512,28 +512,40 @@ class Database:
         return await self.fetchone("SELECT * FROM flights WHERE id=?", (flight_id,))
 
     async def list_user_subscriptions(
-        self, user_id: int, *, limit: int = 20, offset: int = 0
+        self, user_id: int, chat_id: int, *, limit: int = 20, offset: int = 0
     ) -> list[aiosqlite.Row]:
         return await self.fetchall(
             """
             SELECT s.id AS subscription_id, s.active, f.*
             FROM subscriptions s JOIN flights f ON f.id=s.flight_id
-            WHERE s.telegram_user_id=? AND s.active=1
+            WHERE s.telegram_user_id=? AND s.telegram_chat_id=? AND s.active=1
             ORDER BY f.flight_date, f.scheduled_departure_utc_epoch, s.id
             LIMIT ? OFFSET ?
             """,
-            (user_id, limit, offset),
+            (user_id, chat_id, limit, offset),
         )
 
     async def stop_subscription(
-        self, subscription_id: int, user_id: int, *, reason: str = "user"
+        self,
+        subscription_id: int,
+        user_id: int,
+        *,
+        chat_id: int | None = None,
+        reason: str = "user",
     ) -> bool:
         now = _now()
+        chat_clause = " AND telegram_chat_id=?" if chat_id is not None else ""
+        params = (
+            (subscription_id, user_id, chat_id)
+            if chat_id is not None
+            else (subscription_id, user_id)
+        )
         async with self._write_lock:
             await self.conn.execute("BEGIN IMMEDIATE")
             cursor = await self.conn.execute(
-                "SELECT flight_id FROM subscriptions WHERE id=? AND telegram_user_id=? AND active=1",
-                (subscription_id, user_id),
+                f"SELECT flight_id FROM subscriptions "
+                f"WHERE id=? AND telegram_user_id=?{chat_clause} AND active=1",
+                params,
             )
             row = await cursor.fetchone()
             if not row:
@@ -812,8 +824,10 @@ class Database:
                             event_id, subscription_id, telegram_chat_id, status,
                             next_attempt_at_epoch, created_at_epoch, updated_at_epoch
                         )
-                        SELECT ?, id, telegram_chat_id, 'pending', ?, ?, ?
-                        FROM subscriptions WHERE flight_id=? AND active=1
+                        SELECT ?, MIN(id), telegram_chat_id, 'pending', ?, ?, ?
+                        FROM subscriptions
+                        WHERE flight_id=? AND active=1
+                        GROUP BY telegram_chat_id
                         """,
                         (event_id, now, now, now, flight_id),
                     )
@@ -825,8 +839,13 @@ class Database:
             SELECT d.*, e.payload_json, e.event_kind
             FROM notification_deliveries d
             JOIN notification_events e ON e.id=d.event_id
-            JOIN subscriptions s ON s.id=d.subscription_id
-            WHERE d.status IN ('pending','retry') AND d.next_attempt_at_epoch<=? AND s.active=1
+            WHERE d.status IN ('pending','retry') AND d.next_attempt_at_epoch<=?
+              AND EXISTS(
+                  SELECT 1 FROM subscriptions s
+                  WHERE s.flight_id=e.flight_id
+                    AND s.telegram_chat_id=d.telegram_chat_id
+                    AND s.active=1
+              )
             ORDER BY d.next_attempt_at_epoch, d.id
             LIMIT ?
             """,

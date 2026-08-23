@@ -34,6 +34,8 @@ HELP_TEXT = """<b>Underpig Bot</b>
 Добавить рейс:
 <code>/flight FV6106</code>
 
+Статусы будут приходить в тот чат, где добавлен рейс.
+
 Можно сразу указать дату:
 <code>/flight FV6106 2026-08-23</code>
 
@@ -44,6 +46,8 @@ HELP_TEXT = """<b>Underpig Bot</b>
 Остановить подписку: /stop
 
 Обычный текст с номером рейса не запускает поиск."""
+
+FLIGHT_COMMAND_CHAT_TYPES = {ChatType.PRIVATE, ChatType.GROUP, ChatType.SUPERGROUP}
 
 
 class CommandRateLimiter:
@@ -71,9 +75,9 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
         allowed = settings.telegram_allowed_user_ids
         return not allowed or user_id in allowed
 
-    async def private_only(message: Message) -> bool:
-        if message.chat.type != ChatType.PRIVATE:
-            await message.answer("Откройте личный чат с ботом и используйте команду /flight.")
+    async def command_allowed(message: Message) -> bool:
+        if message.chat.type not in FLIGHT_COMMAND_CHAT_TYPES:
+            await message.answer("Команды отслеживания доступны в личных чатах и группах.")
             return False
         if not message.from_user or not user_allowed(message.from_user.id):
             await message.answer("Доступ к этому боту ограничен.")
@@ -82,17 +86,17 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
 
     @router.message(CommandStart())
     async def start(message: Message) -> None:
-        if await private_only(message):
+        if await command_allowed(message):
             await message.answer(HELP_TEXT, parse_mode="HTML")
 
     @router.message(Command("help"))
     async def help_command(message: Message) -> None:
-        if await private_only(message):
+        if await command_allowed(message):
             await message.answer(HELP_TEXT, parse_mode="HTML")
 
     @router.message(Command("flight"))
     async def flight_command(message: Message, command: CommandObject) -> None:
-        if not await private_only(message) or not message.from_user:
+        if not await command_allowed(message) or not message.from_user:
             return
         if not limiter.allow(message.from_user.id):
             await message.answer("Слишком много запросов. Подождите минуту.")
@@ -259,11 +263,13 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
 
     @router.message(Command("flights"))
     async def flights_command(message: Message) -> None:
-        if not await private_only(message) or not message.from_user:
+        if not await command_allowed(message) or not message.from_user:
             return
-        rows = await db.list_user_subscriptions(message.from_user.id)
+        rows = await db.list_user_subscriptions(message.from_user.id, message.chat.id)
         if not rows:
-            await message.answer("У вас нет активных подписок. Добавьте рейс через /flight.")
+            await message.answer(
+                "У вас нет активных подписок в этом чате. Добавьте рейс через /flight."
+            )
             return
         lines = ["<b>Мои рейсы</b>", ""]
         ids: list[int] = []
@@ -288,14 +294,14 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
 
     @router.message(Command("stop"))
     async def stop_command(message: Message, command: CommandObject) -> None:
-        if not await private_only(message) or not message.from_user:
+        if not await command_allowed(message) or not message.from_user:
             return
         argument = (command.args or "").strip()
         if not argument:
-            rows = await db.list_user_subscriptions(message.from_user.id)
+            rows = await db.list_user_subscriptions(message.from_user.id, message.chat.id)
             ids = [int(row["subscription_id"]) for row in rows]
             if not ids:
-                await message.answer("У вас нет активных подписок.")
+                await message.answer("У вас нет активных подписок в этом чате.")
             else:
                 await message.answer(
                     "Выберите подписку, которую нужно остановить:",
@@ -305,7 +311,9 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
         if not argument.isdigit():
             await message.answer("Используйте номер подписки: /stop 123")
             return
-        stopped = await db.stop_subscription(int(argument), message.from_user.id)
+        stopped = await db.stop_subscription(
+            int(argument), message.from_user.id, chat_id=message.chat.id
+        )
         await message.answer(
             "Отслеживание остановлено."
             if stopped
@@ -314,20 +322,25 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
 
     @router.callback_query(F.data.startswith("fs:"))
     async def stop_callback(callback: CallbackQuery) -> None:
-        if not callback.from_user or not callback.data:
+        if not callback.from_user or not callback.data or not callback.message:
             return
         value = callback.data.split(":", 1)[1]
-        stopped = value.isdigit() and await db.stop_subscription(int(value), callback.from_user.id)
+        stopped = value.isdigit() and await db.stop_subscription(
+            int(value), callback.from_user.id, chat_id=callback.message.chat.id
+        )
         await callback.answer(
             "Отслеживание остановлено" if stopped else "Подписка не найдена",
             show_alert=not stopped,
         )
-        if stopped and callback.message:
+        if stopped:
             await callback.message.edit_reply_markup(reply_markup=None)
 
     @router.message(Command("delete_me"))
     async def delete_me_command(message: Message) -> None:
-        if await private_only(message):
+        if message.chat.type != ChatType.PRIVATE:
+            await message.answer("Удаление персональных данных доступно только в личном чате.")
+            return
+        if await command_allowed(message):
             await message.answer(
                 "Удалить ваши подписки и связанные Telegram-идентификаторы?",
                 reply_markup=delete_confirmation_keyboard(),
