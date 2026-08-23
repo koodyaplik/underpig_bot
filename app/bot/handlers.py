@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
 
@@ -12,9 +12,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards import (
-    calendar_keyboard,
     candidate_keyboard,
-    date_shortcuts,
     delete_confirmation_keyboard,
     subscription_keyboard,
     subscriptions_keyboard,
@@ -34,13 +32,7 @@ HELP_TEXT = """<b>Underpig Bot</b>
 Добавить рейс:
 <code>/flight FV6106</code>
 
-Статусы будут приходить в тот чат, где добавлен рейс.
-
-Можно сразу указать дату:
-<code>/flight FV6106 2026-08-23</code>
-
-Для дальнего рейса можно указать аэропорт отправления:
-<code>/flight FV6106 2026-09-15 GOJ</code>
+Бот всегда ищет рейс на сегодня. Статусы будут приходить в тот чат, где добавлен рейс.
 
 Мои подписки: /flights
 Остановить подписку: /stop
@@ -106,105 +98,13 @@ def build_router(*, settings: Settings, db: Database, tracking: TrackingService)
         except CommandValidationError as exc:
             await message.answer(escape(str(exc)), parse_mode="HTML")
             return
-        if parsed.flight_date:
-            await run_search(
-                message,
-                user_id=message.from_user.id,
-                chat_id=message.chat.id,
-                flight_iata=parsed.flight_iata,
-                flight_date=parsed.flight_date,
-                departure_iata=parsed.departure_iata,
-            )
-            return
-        token = await db.create_date_session(
-            telegram_user_id=message.from_user.id,
-            telegram_chat_id=message.chat.id,
-            flight_iata=parsed.flight_iata,
-            departure_iata=parsed.departure_iata,
-            ttl_minutes=settings.pending_selection_ttl_minutes,
-        )
-        today = datetime.now(ZoneInfo(settings.bot_default_timezone)).date()
-        suffix = f" из {parsed.departure_iata}" if parsed.departure_iata else ""
-        await message.answer(
-            f"Выберите дату вылета <b>{escape(parsed.flight_iata)}</b>{escape(suffix)}.\n"
-            f"«Сегодня» определяется по {escape(settings.bot_default_timezone)}.",
-            parse_mode="HTML",
-            reply_markup=date_shortcuts(token, today),
-        )
-
-    @router.callback_query(F.data.startswith("fd:"))
-    async def date_callback(callback: CallbackQuery) -> None:
-        if not callback.from_user or not callback.data or not callback.message:
-            return
-        parts = callback.data.split(":")
-        if len(parts) < 3:
-            await callback.answer("Некорректная кнопка", show_alert=True)
-            return
-        token, action = parts[1], parts[2]
-        session = await db.get_date_session(token, callback.from_user.id)
-        if not session:
-            await callback.answer("Выбор устарел. Повторите /flight.", show_alert=True)
-            return
-        today = datetime.now(ZoneInfo(settings.bot_default_timezone)).date()
-        if action == "noop":
-            await callback.answer()
-            return
-        if action == "cal":
-            await callback.message.edit_reply_markup(
-                reply_markup=calendar_keyboard(token, today.year, today.month)
-            )
-            await callback.answer()
-            return
-        if action == "quick":
-            await callback.message.edit_reply_markup(reply_markup=date_shortcuts(token, today))
-            await callback.answer()
-            return
-        if action == "m" and len(parts) == 4:
-            value = parts[3]
-            try:
-                if len(value) != 6 or not value.isdigit():
-                    raise ValueError
-                month_start = date(int(value[:4]), int(value[4:6]), 1)
-            except ValueError:
-                await callback.answer("Некорректная кнопка", show_alert=True)
-                return
-            await callback.message.edit_reply_markup(
-                reply_markup=calendar_keyboard(token, month_start.year, month_start.month)
-            )
-            await callback.answer()
-            return
-        if action == "cancel":
-            await db.use_date_session(token)
-            await callback.message.edit_text("Выбор рейса отменен.")
-            await callback.answer()
-            return
-        selected_date: str | None
-        if action in {"t0", "t1", "t2"}:
-            selected_date = (today + timedelta(days=int(action[1]))).isoformat()
-        elif action == "d" and len(parts) == 4:
-            value = parts[3]
-            try:
-                if len(value) != 8 or not value.isdigit():
-                    raise ValueError
-                selected_date = date(int(value[:4]), int(value[4:6]), int(value[6:8])).isoformat()
-            except ValueError:
-                await callback.answer("Некорректная кнопка", show_alert=True)
-                return
-        elif action == "any":
-            selected_date = None
-        else:
-            await callback.answer("Некорректная кнопка", show_alert=True)
-            return
-        await db.use_date_session(token)
-        await callback.answer()
-        await callback.message.edit_reply_markup(reply_markup=None)
         await run_search(
-            callback.message,
-            user_id=callback.from_user.id,
-            chat_id=int(session["telegram_chat_id"]),
-            flight_iata=str(session["flight_iata"]),
-            flight_date=selected_date,
-            departure_iata=session["departure_iata"],
+            message,
+            user_id=message.from_user.id,
+            chat_id=message.chat.id,
+            flight_iata=parsed.flight_iata,
+            flight_date=datetime.now(ZoneInfo(settings.bot_default_timezone)).date().isoformat(),
+            departure_iata=None,
         )
 
     async def run_search(

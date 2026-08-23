@@ -5,7 +5,7 @@ import logging
 from app.logging_setup import JsonFormatter, configure_logging
 
 
-def test_json_logging_redacts_query_and_environment_secrets() -> None:
+def test_json_logging_keeps_aviationstack_url_and_redacts_telegram_token() -> None:
     record = logging.LogRecord(
         name="test",
         level=logging.INFO,
@@ -21,9 +21,9 @@ def test_json_logging_redacts_query_and_environment_secrets() -> None:
 
     result = JsonFormatter().format(record)
 
-    assert "flight-secret" not in result
+    assert "access_key=flight-secret" in result
     assert "telegram-secret" not in result
-    assert result.count("[REDACTED]") == 2
+    assert result.count("[REDACTED]") == 1
 
 
 def test_http_client_loggers_do_not_log_request_urls_at_info() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import httpx
@@ -13,7 +14,9 @@ from app.tracking.quota import QuotaManager
 
 
 @pytest.mark.asyncio
-async def test_client_records_attempt_and_redacts_storage(tmp_path: Path) -> None:
+async def test_client_sends_exact_query_and_logs_full_url(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     settings = Settings(
         telegram_bot_token="123456:TEST_TOKEN",
         aviationstack_api_key="very-secret-key",
@@ -28,7 +31,10 @@ async def test_client_records_attempt_and_redacts_storage(tmp_path: Path) -> Non
     await db.migrate()
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["access_key"] == "very-secret-key"
+        assert list(request.url.params.multi_items()) == [
+            ("access_key", "very-secret-key"),
+            ("flight_iata", "FV6106"),
+        ]
         return httpx.Response(200, json={"pagination": {}, "data": []})
 
     quota = QuotaManager(db, settings)
@@ -40,57 +46,17 @@ async def test_client_records_attempt_and_redacts_storage(tmp_path: Path) -> Non
     )
     try:
         await client.initialize()
-        payload = await client.search_flights(
-            "FV6106", flight_date=None, flight_id=None, trigger_type="test", priority=10
-        )
+        with caplog.at_level(logging.INFO, logger="app.aviationstack.client"):
+            payload = await client.search_flights(
+                "FV6106", flight_id=None, trigger_type="test", priority=10
+            )
         assert payload["data"] == []
+        assert (
+            "https://api.aviationstack.com/v1/flights?access_key=very-secret-key&flight_iata=FV6106"
+        ) in caplog.text
         assert await quota.usage() == 1
         row = await db.fetchone("SELECT endpoint_name, api_error_code FROM api_requests")
         assert dict(row) == {"endpoint_name": "flights", "api_error_code": None}
-    finally:
-        await client.close()
-        await db.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("use_date_filter", [False, True])
-async def test_flight_date_query_filter_is_configurable(
-    tmp_path: Path, use_date_filter: bool
-) -> None:
-    settings = Settings(
-        telegram_bot_token="123456:TEST_TOKEN",
-        aviationstack_api_key="test-key",
-        aviationstack_use_flight_date_filter=use_date_filter,
-        database_path=str(tmp_path / f"filter-{use_date_filter}.db"),
-        aviationstack_monthly_request_limit=10,
-        aviationstack_request_reserve=1,
-        aviationstack_hard_request_cap=10,
-        _env_file=None,
-    )
-    db = Database(settings.database_path)
-    await db.connect()
-    await db.migrate()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert ("flight_date" in request.url.params) is use_date_filter
-        if use_date_filter:
-            assert request.url.params["flight_date"] == "2026-08-23"
-        return httpx.Response(200, json={"pagination": {}, "data": []})
-
-    client = AviationstackClient(
-        settings=settings,
-        db=db,
-        quota=QuotaManager(db, settings),
-        transport=httpx.MockTransport(handler),
-    )
-    try:
-        await client.search_flights(
-            "FV6106",
-            flight_date="2026-08-23",
-            flight_id=None,
-            trigger_type="test",
-            priority=10,
-        )
     finally:
         await client.close()
         await db.close()
@@ -158,7 +124,6 @@ async def test_non_json_http_error_keeps_http_status_classification(tmp_path: Pa
         with pytest.raises(AviationstackError) as error:
             await client.search_flights(
                 "FV6106",
-                flight_date="2026-08-23",
                 flight_id=None,
                 trigger_type="test",
                 priority=10,

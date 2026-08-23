@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import time
 from typing import Any
@@ -19,6 +20,7 @@ PERMANENT_AUTH_CODES = {
     "missing_access_key",
     "inactive_user",
 }
+LOGGER = logging.getLogger(__name__)
 
 
 class AviationstackClient:
@@ -66,17 +68,13 @@ class AviationstackClient:
         self,
         flight_iata: str,
         *,
-        flight_date: str | None,
         flight_id: int | None,
         trigger_type: str,
         priority: int,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"flight_iata": flight_iata, "limit": 100, "offset": 0}
-        if flight_date and self.settings.aviationstack_use_flight_date_filter:
-            params["flight_date"] = flight_date
         return await self._request(
             "/flights",
-            params=params,
+            params={"flight_iata": flight_iata},
             endpoint_name="flights",
             flight_id=flight_id,
             trigger_type=trigger_type,
@@ -137,10 +135,11 @@ class AviationstackClient:
         error_code: str | None = None
         success = False
         try:
-            request_params = dict(params)
-            request_params["access_key"] = self.settings.aviationstack_key
+            request_params = {"access_key": self.settings.aviationstack_key, **params}
+            request = self.http.build_request("GET", path, params=request_params)
+            LOGGER.info("Aviationstack request: %s", request.url)
             async with self._semaphore:
-                response = await self.http.get(path, params=request_params)
+                response = await self.http.send(request)
             status = response.status_code
             retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
             try:

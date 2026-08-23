@@ -135,7 +135,6 @@ class TrackingService:
             else:
                 payload = await self.client.search_flights(
                     flight_iata,
-                    flight_date=flight_date,
                     flight_id=None,
                     trigger_type="user_search",
                     priority=10,
@@ -273,7 +272,6 @@ class TrackingService:
             else:
                 payload = await self.client.search_flights(
                     str(flight["requested_flight_iata"]),
-                    flight_date=requested_date,
                     flight_id=flight_id,
                     trigger_type="scheduler",
                     priority=int(flight["polling_priority"]),

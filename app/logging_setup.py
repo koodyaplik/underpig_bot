@@ -7,8 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 REDACTION_PATTERNS = (
-    re.compile(r"(?i)(access_key=)[^&\s\"']+"),
-    re.compile(r"(?i)((?:AVIATIONSTACK_API_KEY|TELEGRAM_BOT_TOKEN|BOT_TOKEN)=)[^\s\"']+"),
+    re.compile(r"(?i)((?:TELEGRAM_BOT_TOKEN|BOT_TOKEN)=)[^\s\"']+"),
     re.compile(r"(?i)(/bot)[0-9]+:[A-Za-z0-9_-]+"),
 )
 
